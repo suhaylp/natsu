@@ -1,17 +1,17 @@
 // ── theme/theme.ts ──
 export const theme = {
   colors: {
-    background: '#FDF6F0',
-    backgroundGradientStart: '#FDE8E0',
-    backgroundGradientEnd: '#F0E8FD',
-    card: 'rgba(255,255,255,0.55)',
-    cardBorder: 'rgba(255,255,255,0.75)',
-    textPrimary: '#1A1A2E',
-    textSecondary: '#7A7A9A',
-    textMuted: '#B0A8C0',
-    accent: '#E8719A',
-    accentLight: 'rgba(232,113,154,0.12)',
-    stub: 'rgba(180,170,200,0.25)',
+    background: '#EDF7F2',
+    backgroundGradientStart: '#D6EDE4',
+    backgroundGradientEnd: '#E4F0EB',
+    card: 'rgba(220,245,232,0.55)',
+    cardBorder: 'rgba(255,255,255,0.70)',
+    textPrimary: '#1A3A2A',
+    textSecondary: '#5A7A68',
+    textMuted: '#8AADA0',
+    accent: '#2E7D52',
+    accentLight: 'rgba(46,125,82,0.12)',
+    stub: 'rgba(200,230,215,0.30)',
   },
   spacing: {
     xs: 4,

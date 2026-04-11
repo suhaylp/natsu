@@ -49,35 +49,78 @@ export function TripsScreen({ navigation }: Props) {
         </View>
 
         <ScrollView contentContainerStyle={{ paddingBottom: theme.spacing.xxl }}>
-          {trips.map((trip) => (
-            <TouchableOpacity
-              key={trip.id}
-              activeOpacity={0.75}
-              onPress={() => navigation.navigate('TripDetail', { tripId: trip.id })}
-              style={{ marginHorizontal: theme.spacing.xl, marginBottom: theme.spacing.lg }}
-            >
-              <GlassCard>
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <View style={{ flex: 1, paddingRight: theme.spacing.lg }}>
-                    <Text style={{ fontSize: 36, marginBottom: theme.spacing.sm }}>{trip.emoji}</Text>
-                    <Text
-                      style={{
-                        ...theme.typography.h2,
-                        color: theme.colors.textPrimary,
-                        marginBottom: theme.spacing.xs,
-                      }}
-                    >
-                      {trip.title}
-                    </Text>
-                    <Text style={{ ...theme.typography.caption, color: theme.colors.textMuted }}>
-                      {trip.dateRange}
-                    </Text>
+          {trips.map((trip) => {
+            const confirmedCount = trip.bookings.filter((booking) => booking.status === 'booked').length;
+            const toBookCount = trip.bookings.filter((booking) => booking.status === 'not_booked').length;
+
+            return (
+              <TouchableOpacity
+                key={trip.id}
+                activeOpacity={0.75}
+                onPress={() => navigation.navigate('TripDetail', { tripId: trip.id })}
+                style={{ marginHorizontal: theme.spacing.xl, marginBottom: theme.spacing.lg }}
+              >
+                <GlassCard>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <View style={{ flex: 1, paddingRight: theme.spacing.lg }}>
+                      <Text style={{ fontSize: 36, marginBottom: theme.spacing.sm }}>{trip.emoji}</Text>
+                      <Text
+                        style={{
+                          ...theme.typography.h2,
+                          color: theme.colors.textPrimary,
+                          marginBottom: theme.spacing.xs,
+                        }}
+                      >
+                        {trip.title}
+                      </Text>
+                      <Text style={{ ...theme.typography.caption, color: theme.colors.textMuted }}>
+                        {trip.dateRange}
+                      </Text>
+
+                      <View
+                        style={{
+                          flexDirection: 'row',
+                          alignItems: 'center',
+                          marginTop: theme.spacing.sm,
+                        }}
+                      >
+                        <View
+                          style={{
+                            backgroundColor: theme.colors.accentLight,
+                            borderRadius: theme.radii.pill,
+                            paddingHorizontal: theme.spacing.md,
+                            paddingVertical: theme.spacing.xs,
+                            marginRight: theme.spacing.sm,
+                          }}
+                        >
+                          <Text style={{ ...theme.typography.caption, color: theme.colors.accent }}>
+                            {`${confirmedCount} confirmed`}
+                          </Text>
+                        </View>
+
+                        {toBookCount > 0 ? (
+                          <View
+                            style={{
+                              backgroundColor: theme.colors.stub,
+                              borderRadius: theme.radii.pill,
+                              paddingHorizontal: theme.spacing.md,
+                              paddingVertical: theme.spacing.xs,
+                            }}
+                          >
+                            <Text style={{ ...theme.typography.caption, color: theme.colors.textMuted }}>
+                              {`${toBookCount} to book`}
+                            </Text>
+                          </View>
+                        ) : null}
+                      </View>
+                    </View>
+
+                    <Text style={{ color: theme.colors.accent, fontSize: 24 }}>→</Text>
                   </View>
-                  <Text style={{ color: theme.colors.accent, fontSize: 24 }}>→</Text>
-                </View>
-              </GlassCard>
-            </TouchableOpacity>
-          ))}
+                </GlassCard>
+              </TouchableOpacity>
+            );
+          })}
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>
