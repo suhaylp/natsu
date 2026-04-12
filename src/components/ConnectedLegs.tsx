@@ -7,6 +7,25 @@ type ConnectedLegsProps = {
   compact?: boolean;
 };
 
+const airportTimezones: Record<string, string> = {
+  YVR: 'PDT',
+  YHU: 'EDT',
+  YOW: 'EDT',
+  YYC: 'MDT',
+  HND: 'JST',
+  SIN: 'SGT',
+  BKK: 'ICT',
+  NRT: 'JST',
+  CNX: 'ICT',
+  HAN: 'ICT',
+  SGN: 'ICT',
+};
+
+function formatDateTimeWithTimezone(date: string, time: string, airportCode: string): string {
+  const timezone = airportTimezones[airportCode];
+  return timezone ? `${date}, ${time} ${timezone}` : `${date}, ${time}`;
+}
+
 const monthMap: Record<string, number> = {
   Jan: 0,
   Feb: 1,
@@ -190,12 +209,19 @@ export function ConnectedLegs({ legs, compact = false }: ConnectedLegsProps) {
                         marginBottom: 6,
                       }}
                     >
-                      {`${leg.fromCity} → ${leg.toCity}`}
+                      {`${leg.fromCity} (${leg.fromCode}) → ${leg.toCity} (${leg.toCode})`}
                     </Text>
 
                     <InfoRow label="Flight" value={leg.flightNumber} />
-                    <InfoRow label="Departs" value={`${leg.departureDate}  ${leg.departureTime}`} />
-                    <InfoRow label="Arrives" value={`${leg.arrivalDate}  ${leg.arrivalTime}`} isLast={!leg.duration} />
+                    <InfoRow
+                      label="Departs"
+                      value={formatDateTimeWithTimezone(leg.departureDate, leg.departureTime, leg.fromCode)}
+                    />
+                    <InfoRow
+                      label="Arrives"
+                      value={formatDateTimeWithTimezone(leg.arrivalDate, leg.arrivalTime, leg.toCode)}
+                      isLast={!leg.duration}
+                    />
                     {leg.duration ? <InfoRow label="Duration" value={leg.duration} isLast={true} /> : null}
                   </>
                 )}
@@ -221,6 +247,8 @@ export function ConnectedLegs({ legs, compact = false }: ConnectedLegsProps) {
                       borderWidth: 2,
                       borderColor: theme.colors.accent,
                       backgroundColor: theme.colors.backgroundGradientStart,
+                      marginTop: -2,
+                      marginBottom: 2,
                     }}
                   />
                   <View

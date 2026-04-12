@@ -21,6 +21,25 @@ type InfoRowProps = {
   isLast?: boolean;
 };
 
+const airportTimezones: Record<string, string> = {
+  YVR: 'PDT',
+  YHU: 'EDT',
+  YOW: 'EDT',
+  YYC: 'MDT',
+  HND: 'JST',
+  SIN: 'SGT',
+  BKK: 'ICT',
+  NRT: 'JST',
+  CNX: 'ICT',
+  HAN: 'ICT',
+  SGN: 'ICT',
+};
+
+function formatDateTimeWithTimezone(date: string, time: string, airportCode: string): string {
+  const timezone = airportTimezones[airportCode];
+  return timezone ? `${date}, ${time} ${timezone}` : `${date}, ${time}`;
+}
+
 function InfoRow({ label, value, isLast = false }: InfoRowProps) {
   return (
     <View
@@ -49,20 +68,28 @@ function InfoRow({ label, value, isLast = false }: InfoRowProps) {
   );
 }
 
-function getWhoIsFlying(booking: NonNullable<ReturnType<typeof getBooking>>): Array<{ id: PassengerId; seat?: string }> {
+function getWhoIsFlyingData(
+  booking: NonNullable<ReturnType<typeof getBooking>>
+): { flyers: Array<{ id: PassengerId; seat?: string }>; noSeatsBooked: boolean } {
   const seatInfo = booking.legs.find((leg) => leg.seats !== undefined)?.seats;
 
   if (!seatInfo) {
-    return [];
+    return { flyers: [], noSeatsBooked: false };
   }
 
   if (seatInfo === 'not_assigned') {
-    return (Object.keys(passengers) as PassengerId[]).map((id) => ({ id }));
+    return {
+      flyers: (Object.keys(passengers) as PassengerId[]).map((id) => ({ id })),
+      noSeatsBooked: true,
+    };
   }
 
-  return (Object.keys(seatInfo) as PassengerId[])
-    .filter((id) => Boolean(seatInfo[id]))
-    .map((id) => ({ id, seat: seatInfo[id] }));
+  return {
+    flyers: (Object.keys(seatInfo) as PassengerId[])
+      .filter((id) => Boolean(seatInfo[id]))
+      .map((id) => ({ id, seat: seatInfo[id] })),
+    noSeatsBooked: false,
+  };
 }
 
 function getBooking(tripId: string, bookingId: string) {
@@ -78,7 +105,31 @@ export function FlightDetailScreen({ navigation, route }: Props) {
   const booking = getBooking(route.params.tripId, bookingId);
   const firstLeg = booking?.legs[0];
   const lastLeg = booking?.legs[booking.legs.length - 1];
-  const flyers = booking ? getWhoIsFlying(booking) : [];
+  const whoIsFlying = booking ? getWhoIsFlyingData(booking) : { flyers: [], noSeatsBooked: false };
+  const baggageRows = booking?.baggage
+    ? [
+        { label: 'Carry-on', value: booking.baggage.carryOn },
+        { label: 'Check-in', value: booking.baggage.checkIn },
+      ]
+    : [];
+  const singleLegRows =
+    booking && firstLeg
+      ? [
+          { label: 'Flight', value: firstLeg.flightNumber },
+          { label: 'From', value: `${firstLeg.fromCity} (${firstLeg.fromCode})` },
+          { label: 'To', value: `${firstLeg.toCity} (${firstLeg.toCode})` },
+          {
+            label: 'Departure',
+            value: formatDateTimeWithTimezone(firstLeg.departureDate, firstLeg.departureTime, firstLeg.fromCode),
+          },
+          {
+            label: 'Arrival',
+            value: formatDateTimeWithTimezone(firstLeg.arrivalDate, firstLeg.arrivalTime, firstLeg.toCode),
+          },
+          ...(firstLeg.duration ? [{ label: 'Duration', value: firstLeg.duration }] : []),
+          ...baggageRows,
+        ]
+      : [];
 
   return (
     <LinearGradient
@@ -155,19 +206,40 @@ export function FlightDetailScreen({ navigation, route }: Props) {
 
               {booking.legs.length === 1 ? (
                 <>
-                  <InfoRow label="Flight" value={firstLeg.flightNumber} />
-                  <InfoRow label="Departure" value={`${firstLeg.departureDate}  ${firstLeg.departureTime}`} />
-                  <InfoRow label="Arrival" value={`${firstLeg.arrivalDate}  ${firstLeg.arrivalTime}`} isLast={!firstLeg.duration && !booking.baggage} />
-                  {firstLeg.duration ? (
-                    <InfoRow label="Duration" value={firstLeg.duration} isLast={!booking.baggage} />
-                  ) : null}
-                  {booking.baggage ? <InfoRow label="Baggage" value={booking.baggage} isLast={true} /> : null}
+                  {singleLegRows.map((row, index) => (
+                    <InfoRow
+                      key={`single-row-${row.label}`}
+                      label={row.label}
+                      value={row.value}
+                      isLast={index === singleLegRows.length - 1}
+                    />
+                  ))}
                 </>
               ) : (
                 <View style={{ marginTop: theme.spacing.sm }}>
                   <ConnectedLegs legs={booking.legs} />
                 </View>
               )}
+
+              {booking.legs.length > 1 && baggageRows.length > 0 ? (
+                <View
+                  style={{
+                    marginTop: theme.spacing.lg,
+                    paddingTop: theme.spacing.lg,
+                    borderTopWidth: 0.5,
+                    borderColor: theme.colors.cardBorder,
+                  }}
+                >
+                  {baggageRows.map((row, index) => (
+                    <InfoRow
+                      key={`baggage-row-${row.label}`}
+                      label={row.label}
+                      value={row.value}
+                      isLast={index === baggageRows.length - 1}
+                    />
+                  ))}
+                </View>
+              ) : null}
 
               <View
                 style={{
@@ -179,12 +251,27 @@ export function FlightDetailScreen({ navigation, route }: Props) {
               >
                 <SectionLabel>Who&apos;s flying</SectionLabel>
 
-                <View style={{ flexDirection: 'row', flexWrap: 'wrap' }}>
-                  {flyers.map((flyer) => (
-                    <View key={`flyer-${flyer.id}`} style={{ marginRight: 6, marginBottom: 6 }}>
-                      <PassengerBubble name={passengers[flyer.id].short} seat={flyer.seat} />
-                    </View>
-                  ))}
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <View style={{ flexDirection: 'row', flexWrap: 'wrap', flex: 1 }}>
+                    {whoIsFlying.flyers.map((flyer) => (
+                      <View key={`flyer-${flyer.id}`} style={{ marginRight: 6, marginBottom: 6 }}>
+                        <PassengerBubble name={passengers[flyer.id].short} seat={flyer.seat} />
+                      </View>
+                    ))}
+                  </View>
+
+                  {whoIsFlying.noSeatsBooked ? (
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        color: theme.colors.textMuted,
+                        marginLeft: theme.spacing.xs,
+                        marginBottom: theme.spacing.xs - 2,
+                      }}
+                    >
+                      No seats booked
+                    </Text>
+                  ) : null}
                 </View>
               </View>
             </GlassCard>

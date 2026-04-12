@@ -6,9 +6,7 @@ import { StatusBar } from 'expo-status-bar';
 import { StackScreenProps } from '@react-navigation/stack';
 import { GlassCard } from '../components/GlassCard';
 import { ConnectedLegs } from '../components/ConnectedLegs';
-import { PassengerBubble } from '../components/PassengerBubble';
-import { passengers, type PassengerId } from '../data/passengers';
-import { trips, type Booking } from '../data/trips';
+import { trips } from '../data/trips';
 import { theme } from '../theme/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -29,52 +27,34 @@ const monthMap: Record<string, number> = {
   Dec: 11,
 };
 
-function parseDeparture(booking: Booking): number {
+const weekdayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'] as const;
+const timelineLineLeft = theme.spacing.xl;
+const timelineDotSize = theme.spacing.md - 2;
+const timelineDotRadius = timelineDotSize / 2;
+const timelineDotLeft = -32;
+const timelineDotTop = theme.spacing.xl;
+
+function getDayDateLabel(dateToken?: string): string {
+  if (!dateToken) {
+    return 'TBD';
+  }
+
   try {
-    const firstLeg = booking.legs[0];
-
-    if (!firstLeg) {
-      return Number.MAX_SAFE_INTEGER;
-    }
-
-    const [monthToken, dayToken] = firstLeg.departureDate.split(' ');
-    const [hourToken, minuteToken] = firstLeg.departureTime.split(':');
-
+    const [monthToken, dayToken] = dateToken.trim().split(' ');
     const month = monthMap[monthToken];
     const day = Number(dayToken);
-    const hour = Number(hourToken);
-    const minute = Number(minuteToken);
 
-    if (
-      Number.isNaN(month) ||
-      Number.isNaN(day) ||
-      Number.isNaN(hour) ||
-      Number.isNaN(minute) ||
-      month === undefined
-    ) {
-      return Number.MAX_SAFE_INTEGER;
+    if (month === undefined || Number.isNaN(day)) {
+      return dateToken.toUpperCase();
     }
 
-    return new Date(2026, month, day, hour, minute, 0, 0).getTime();
+    const date = new Date(2026, month, day);
+    const weekday = weekdayNames[date.getDay()];
+
+    return `${weekday}, ${monthToken.toUpperCase()} ${day}`;
   } catch {
-    return Number.MAX_SAFE_INTEGER;
+    return dateToken.toUpperCase();
   }
-}
-
-function getBubbleData(booking: Booking): Array<{ id: PassengerId; seat?: string }> {
-  const seatInfo = booking.legs[0]?.seats;
-
-  if (!seatInfo) {
-    return [];
-  }
-
-  if (seatInfo === 'not_assigned') {
-    return (Object.keys(passengers) as PassengerId[]).map((id) => ({ id }));
-  }
-
-  return (Object.keys(seatInfo) as PassengerId[])
-    .filter((id) => Boolean(seatInfo[id]))
-    .map((id) => ({ id, seat: seatInfo[id] }));
 }
 
 export function TripDetailScreen({ navigation, route }: Props) {
@@ -125,18 +105,6 @@ export function TripDetailScreen({ navigation, route }: Props) {
     );
   }
 
-  const indexedBookings = trip.bookings.map((booking, index) => ({ booking, index }));
-
-  const sortedBooked = indexedBookings
-    .filter((item) => item.booking.status === 'booked')
-    .sort((a, b) => {
-      const diff = parseDeparture(a.booking) - parseDeparture(b.booking);
-      return diff !== 0 ? diff : a.index - b.index;
-    });
-
-  const pending = indexedBookings.filter((item) => item.booking.status === 'not_booked');
-  const orderedBookings = [...sortedBooked, ...pending].map((item) => item.booking);
-
   return (
     <LinearGradient
       colors={[theme.colors.backgroundGradientStart, theme.colors.backgroundGradientEnd]}
@@ -186,7 +154,7 @@ export function TripDetailScreen({ navigation, route }: Props) {
             <View
               style={{
                 position: 'absolute',
-                left: 20,
+                left: timelineLineLeft,
                 top: 0,
                 bottom: 0,
                 width: 2,
@@ -196,9 +164,9 @@ export function TripDetailScreen({ navigation, route }: Props) {
               }}
             />
 
-            {orderedBookings.map((booking) => {
+            {trip.bookings.map((booking) => {
               const firstLeg = booking.legs[0];
-              const bubbles = getBubbleData(booking);
+              const bookingMeta = [booking.airline, booking.bookingRef].filter(Boolean).join(' · ');
 
               if (booking.status === 'not_booked') {
                 return (
@@ -206,11 +174,11 @@ export function TripDetailScreen({ navigation, route }: Props) {
                     <View
                       style={{
                         position: 'absolute',
-                        left: -34,
-                        top: 12,
-                        width: 10,
-                        height: 10,
-                        borderRadius: 5,
+                        left: timelineDotLeft,
+                        top: timelineDotTop,
+                        width: timelineDotSize,
+                        height: timelineDotSize,
+                        borderRadius: timelineDotRadius,
                         backgroundColor: 'transparent',
                         borderWidth: 2,
                         borderColor: theme.colors.textMuted,
@@ -256,11 +224,11 @@ export function TripDetailScreen({ navigation, route }: Props) {
                   <View
                     style={{
                       position: 'absolute',
-                      left: -34,
-                      top: 12,
-                      width: 10,
-                      height: 10,
-                      borderRadius: 5,
+                      left: timelineDotLeft,
+                      top: timelineDotTop,
+                      width: timelineDotSize,
+                      height: timelineDotSize,
+                      borderRadius: timelineDotRadius,
                       backgroundColor: theme.colors.accent,
                       borderWidth: 2,
                       borderColor: theme.colors.backgroundGradientStart,
@@ -293,7 +261,7 @@ export function TripDetailScreen({ navigation, route }: Props) {
                             textTransform: 'uppercase',
                           }}
                         >
-                          {firstLeg?.departureDate ?? 'TBD'}
+                          {getDayDateLabel(firstLeg?.departureDate)}
                         </Text>
                         <View
                           style={{
@@ -310,13 +278,24 @@ export function TripDetailScreen({ navigation, route }: Props) {
                       </View>
 
                       <Text style={{ fontSize: 12, color: theme.colors.textMuted, marginBottom: 8 }}>
-                        {[booking.airline, booking.bookingRef].filter(Boolean).join(' · ')}
+                        {bookingMeta ? `✈️ ${bookingMeta}` : '✈️ Flight'}
                       </Text>
 
                       {booking.legs.length === 1 && firstLeg ? (
-                        <Text style={{ fontSize: 15, fontWeight: '600', color: theme.colors.textPrimary }}>
-                          {`${firstLeg.fromCity} → ${firstLeg.toCity}`}
-                        </Text>
+                        <View>
+                          <Text style={{ fontSize: 15, fontWeight: '600', color: theme.colors.textPrimary }}>
+                            {`${firstLeg.fromCity} → ${firstLeg.toCity}`}
+                          </Text>
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              color: theme.colors.textMuted,
+                              marginTop: theme.spacing.xs - 2,
+                            }}
+                          >
+                            {firstLeg.flightNumber}
+                          </Text>
+                        </View>
                       ) : null}
 
                       {booking.legs.length > 1 ? (
@@ -332,21 +311,6 @@ export function TripDetailScreen({ navigation, route }: Props) {
                         </View>
                       ) : null}
 
-                      {bubbles.length > 0 ? (
-                        <View
-                          style={{
-                            flexDirection: 'row',
-                            flexWrap: 'wrap',
-                            marginTop: 10,
-                          }}
-                        >
-                          {bubbles.map((bubble) => (
-                            <View key={`${booking.id}-${bubble.id}`} style={{ marginRight: 6, marginBottom: 6 }}>
-                              <PassengerBubble name={passengers[bubble.id].short} seat={bubble.seat} />
-                            </View>
-                          ))}
-                        </View>
-                      ) : null}
                     </GlassCard>
                   </TouchableOpacity>
                 </View>

@@ -1,23 +1,24 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   Animated,
   Easing,
   Image,
-  NativeScrollEvent,
-  NativeSyntheticEvent,
   ScrollView,
   StatusBar,
   Text,
   TouchableOpacity,
-  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StackScreenProps } from '@react-navigation/stack';
 import { GlassCard } from '../components/GlassCard';
-import { homeMessages, defaultMessage } from '../data/messages';
-import { carouselPhotos } from '../data/photos';
+import {
+  HOME_SCREEN_COPY,
+  RECENT_MOMENTS,
+  SECRET_GREETINGS,
+  TODAY_MEMORY,
+} from '../data/homeContent';
 import { trips } from '../data/trips';
 import { theme } from '../theme/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
@@ -25,72 +26,20 @@ import type { RootStackParamList } from '../navigation/AppNavigator';
 type Props = StackScreenProps<RootStackParamList, 'Home'>;
 
 export function HomeScreen({ navigation }: Props) {
-  const { width } = useWindowDimensions();
-
-  const horizontalPadding = theme.spacing.xxl;
-  const pageWidth = width - horizontalPadding * 2;
-  const carouselHeight = theme.spacing.xxxxl * 4 + theme.spacing.sm;
-  const activeDotWidth = theme.spacing.lg;
-  const inactiveDotSize = theme.spacing.sm - 3;
-  const dotRadius = theme.spacing.xs - 1;
-
-  const [activeIndex, setActiveIndex] = useState(0);
-  const [currentMessage, setCurrentMessage] = useState(defaultMessage);
+  const [currentMessage, setCurrentMessage] = useState<string>(HOME_SCREEN_COPY.initialGreeting);
 
   const messageOpacity = useRef(new Animated.Value(1)).current;
-  const dotWidthsRef = useRef<Animated.Value[]>([]);
-
-  const slideCount = carouselPhotos.length > 0 ? carouselPhotos.length : 1;
-
-  if (dotWidthsRef.current.length !== slideCount) {
-    dotWidthsRef.current = Array.from({ length: slideCount }, (_, index) =>
-      new Animated.Value(index === activeIndex ? activeDotWidth : inactiveDotSize)
-    );
-  }
-
-  useEffect(() => {
-    const animations = dotWidthsRef.current.map((value, index) =>
-      Animated.spring(value, {
-        toValue: index === activeIndex ? activeDotWidth : inactiveDotSize,
-        friction: 7,
-        tension: 40,
-        useNativeDriver: false,
-      })
-    );
-
-    Animated.parallel(animations).start();
-  }, [activeDotWidth, activeIndex, inactiveDotSize]);
-
-  const handleCarouselEnd = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-    if (carouselPhotos.length <= 1) {
-      setActiveIndex(0);
-      return;
-    }
-
-    const nextIndex = Math.round(event.nativeEvent.contentOffset.x / pageWidth);
-
-    if (nextIndex < 0) {
-      setActiveIndex(0);
-      return;
-    }
-
-    if (nextIndex > carouselPhotos.length - 1) {
-      setActiveIndex(carouselPhotos.length - 1);
-      return;
-    }
-
-    setActiveIndex(nextIndex);
-  };
 
   const shuffleMessage = () => {
-    if (homeMessages.length <= 1) {
+    if (SECRET_GREETINGS.length === 0) {
       return;
     }
 
-    let nextMessage = currentMessage;
-
-    while (nextMessage === currentMessage) {
-      nextMessage = homeMessages[Math.floor(Math.random() * homeMessages.length)];
+    let nextMessage = SECRET_GREETINGS[Math.floor(Math.random() * SECRET_GREETINGS.length)];
+    if (SECRET_GREETINGS.length > 1) {
+      while (nextMessage === currentMessage) {
+        nextMessage = SECRET_GREETINGS[Math.floor(Math.random() * SECRET_GREETINGS.length)];
+      }
     }
 
     Animated.timing(messageOpacity, {
@@ -126,110 +75,138 @@ export function HomeScreen({ navigation }: Props) {
         >
           <View
             style={{
-              alignItems: 'center',
+              alignItems: 'flex-start',
+              width: '100%',
               marginTop: theme.spacing.xxxl + theme.spacing.sm,
-              marginBottom: theme.spacing.xxl + theme.spacing.xs,
+              marginBottom: theme.spacing.sm,
             }}
           >
-            <Text
-              style={{
-                fontSize: 30,
-                fontWeight: '700',
-                color: theme.colors.textPrimary,
-                textAlign: 'center',
-                letterSpacing: -0.5,
-                lineHeight: 36,
-              }}
-            >
-              {"Welcome to\nNatSu's App"}
-            </Text>
-
             <Animated.Text
               style={{
-                fontSize: theme.spacing.md + 1,
-                color: theme.colors.textMuted,
-                marginTop: theme.spacing.sm,
-                textAlign: 'center',
+                fontSize: 14,
+                color: '#5a8a6a',
+                fontWeight: '500',
+                letterSpacing: 0.8,
+                textTransform: 'uppercase',
+                marginBottom: 2,
                 opacity: messageOpacity,
+                textAlign: 'left',
               }}
             >
               {currentMessage}
             </Animated.Text>
+
+            <Text
+              style={{
+                fontSize: 32,
+                fontWeight: '500',
+                color: '#1a4030',
+                lineHeight: 36,
+                marginBottom: theme.spacing.xs,
+                textAlign: 'left',
+              }}
+            >
+              {HOME_SCREEN_COPY.memoryHeading}
+            </Text>
           </View>
 
           <View
             style={{
-              borderRadius: theme.radii.card,
+              marginTop: 0,
+              borderRadius: 22,
               overflow: 'hidden',
-              shadowColor: theme.colors.textPrimary,
-              shadowOffset: { width: 0, height: theme.spacing.md - 2 },
-              shadowOpacity: 0.1,
-              shadowRadius: theme.spacing.xxl,
-              elevation: 8,
             }}
           >
-            {carouselPhotos.length > 0 ? (
-              <ScrollView
-                horizontal={true}
-                pagingEnabled={true}
-                showsHorizontalScrollIndicator={false}
-                onMomentumScrollEnd={handleCarouselEnd}
+            <Image source={TODAY_MEMORY.image} style={{ width: '100%', height: 188 }} resizeMode="cover" />
+            <View
+              style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                top: 0,
+                bottom: 0,
+                backgroundColor: 'rgba(15, 35, 22, 0.4)',
+              }}
+            />
+            <View
+              style={{
+                position: 'absolute',
+                left: theme.spacing.lg,
+                right: theme.spacing.lg,
+                bottom: theme.spacing.lg,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 11,
+                  color: 'rgba(255, 255, 255, 0.75)',
+                  letterSpacing: 0.5,
+                  marginBottom: 2,
+                }}
               >
-                {carouselPhotos.map((photo, index) => (
-                  <View key={`home-photo-${index}`} style={{ width: pageWidth, height: carouselHeight }}>
-                    <Image source={photo} resizeMode="cover" style={{ width: '100%', height: '100%' }} />
-                  </View>
-                ))}
-              </ScrollView>
-            ) : (
-              <View style={{ width: pageWidth, height: carouselHeight }}>
-                <GlassCard style={{ width: pageWidth, height: carouselHeight }}>
-                  <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-                    <Text
-                      style={{
-                        fontSize: theme.spacing.xxl + theme.spacing.xs,
-                        color: theme.colors.accent,
-                        marginBottom: theme.spacing.sm,
-                      }}
-                    >
-                      ✦
-                    </Text>
-                    <Text
-                      style={{
-                        fontSize: theme.spacing.md + 1,
-                        color: theme.colors.textMuted,
-                        textAlign: 'center',
-                      }}
-                    >
-                      Add photos in data/photos.ts
-                    </Text>
-                  </View>
-                </GlassCard>
-              </View>
-            )}
+                {TODAY_MEMORY.caption}
+              </Text>
+              <Text
+                style={{
+                  fontSize: 16,
+                  fontWeight: '500',
+                  color: '#ffffff',
+                }}
+              >
+                {TODAY_MEMORY.title}
+              </Text>
+            </View>
           </View>
 
-          <View
-            style={{
-              flexDirection: 'row',
-              justifyContent: 'center',
-              alignItems: 'center',
-              marginTop: theme.spacing.md,
-            }}
-          >
-            {dotWidthsRef.current.map((dotWidth, index) => (
-              <Animated.View
-                key={`home-dot-${index}`}
-                style={{
-                  width: dotWidth,
-                  height: inactiveDotSize,
-                  borderRadius: dotRadius,
-                  backgroundColor: index === activeIndex ? theme.colors.accent : theme.colors.textMuted,
-                  opacity: index === activeIndex ? 1 : 0.35,
-                  marginHorizontal: theme.spacing.xs / 2,
-                }}
-              />
-            ))}
+          <View style={{ marginTop: theme.spacing.lg }}>
+            <Text
+              style={{
+                fontSize: 11,
+                color: '#5a8a6a',
+                fontWeight: '500',
+                letterSpacing: 0.8,
+                textTransform: 'uppercase',
+                marginBottom: 10,
+              }}
+            >
+              {HOME_SCREEN_COPY.recentMomentsHeading}
+            </Text>
+
+            <ScrollView horizontal={true} showsHorizontalScrollIndicator={false}>
+              {RECENT_MOMENTS.map((moment, index) => (
+                <View key={`recent-moment-${index}`}>
+                  <Image
+                    source={moment.image}
+                    style={{
+                      width: 88,
+                      height: 88,
+                      borderRadius: 14,
+                      marginBottom: 6,
+                      marginRight: 8,
+                    }}
+                    resizeMode="cover"
+                  />
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: '500',
+                      color: '#1a4030',
+                    }}
+                    numberOfLines={1}
+                  >
+                    {moment.title}
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      color: '#7aaa8a',
+                    }}
+                  >
+                    {moment.date}
+                  </Text>
+                </View>
+              ))}
+            </ScrollView>
           </View>
 
           <TouchableOpacity

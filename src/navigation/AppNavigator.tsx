@@ -1,10 +1,10 @@
 // ── navigation/AppNavigator.tsx ──
-import { createStackNavigator, CardStyleInterpolators } from '@react-navigation/stack';
-import { HomeScreen } from '../screens/HomeScreen';
-import { TripsScreen } from '../screens/TripsScreen';
-import { TripDetailScreen } from '../screens/TripDetailScreen';
-import { FlightDetailScreen } from '../screens/FlightDetailScreen';
+import { CardStyleInterpolators, createStackNavigator } from '@react-navigation/stack';
 import { ComingSoonScreen } from '../screens/ComingSoonScreen';
+import { FlightDetailScreen } from '../screens/FlightDetailScreen';
+import { HomeScreen } from '../screens/HomeScreen';
+import { TripDetailScreen } from '../screens/TripDetailScreen';
+import { TripsScreen } from '../screens/TripsScreen';
 
 export type RootStackParamList = {
   Home: undefined;

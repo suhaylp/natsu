@@ -14,6 +14,11 @@ type FlightLeg = {
   seats?: { suhayl?: string; natalia?: string } | 'not_assigned';
 };
 
+type Baggage = {
+  carryOn: string;
+  checkIn: string;
+};
+
 type Booking = {
   id: string;
   type: 'flight' | 'train';
@@ -22,7 +27,7 @@ type Booking = {
   airline?: string;
   bookingRef?: string;
   legs: FlightLeg[];
-  baggage?: string;
+  baggage?: Baggage;
   notes?: string;
 };
 
@@ -34,7 +39,7 @@ type Trip = {
   bookings: Booking[];
 };
 
-export type { BookingStatus, FlightLeg, Booking, Trip };
+export type { Booking, BookingStatus, FlightLeg, Trip };
 
 export const trips: Trip[] = [
   {
@@ -65,7 +70,10 @@ export const trips: Trip[] = [
             seats: 'not_assigned',
           },
         ],
-        baggage: 'Suhayl: 1 bag · Natalia: none',
+        baggage: {
+          carryOn: '1 carry-on each',
+          checkIn: '1 check-in shared',
+        },
       },
       {
         id: 'mtl-ott-train',
@@ -73,7 +81,7 @@ export const trips: Trip[] = [
         status: 'not_booked',
         label: 'Montreal → Ottawa',
         legs: [],
-        notes: 'Friday Jun 26 · ~2h via VIA Rail — not booked yet',
+        notes: 'Friday June 26th · ~2h via VIA Rail — not booked yet',
       },
       {
         id: 'yow-yvr',
@@ -108,7 +116,10 @@ export const trips: Trip[] = [
             seats: 'not_assigned',
           },
         ],
-        baggage: '1st bag free',
+        baggage: {
+          carryOn: '1 carry-on each',
+          checkIn: '1 check-in each',
+        },
       },
     ],
   },
@@ -116,7 +127,7 @@ export const trips: Trip[] = [
     id: 'sea-japan',
     title: 'Asia Backpacking',
     emoji: '🎒🌏',
-    dateRange: 'Dates TBD',
+    dateRange: 'Jul 15 – Aug 24, 2026',
     bookings: [
       {
         id: 'yvr-hnd-sin',
@@ -136,7 +147,7 @@ export const trips: Trip[] = [
             departureDate: 'Jul 15',
             arrivalTime: '19:00',
             arrivalDate: 'Jul 16',
-            seats: { suhayl: '38D' },
+            seats: { suhayl: '38D', natalia: '38F' },
           },
           {
             flightNumber: 'NH843',
@@ -148,10 +159,13 @@ export const trips: Trip[] = [
             departureDate: 'Jul 17',
             arrivalTime: '06:40',
             arrivalDate: 'Jul 17',
-            seats: { suhayl: '29B' },
+            seats: { suhayl: '29B', natalia: '29A' },
           },
         ],
-        baggage: '2 checked bags, 23kg each',
+        baggage: {
+          carryOn: '1 carry-on each',
+          checkIn: '2 check-in each',
+        },
       },
       {
         id: 'sin-bkk',
@@ -171,7 +185,7 @@ export const trips: Trip[] = [
             departureDate: 'Jul 18',
             arrivalTime: '19:35',
             arrivalDate: 'Jul 18',
-            duration: '1h 35m',
+            duration: '2h 35m',
             seats: { suhayl: '32J', natalia: '32K' },
           },
         ],
@@ -213,7 +227,10 @@ export const trips: Trip[] = [
             seats: { suhayl: '47K', natalia: '47J' },
           },
         ],
-        baggage: 'Carry-on 7kg included · Checked: not included',
+        baggage: {
+          carryOn: '1 carry-on each',
+          checkIn: '0 check-in each',
+        },
       },
     ],
   },
