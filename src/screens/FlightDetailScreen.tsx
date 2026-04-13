@@ -9,7 +9,8 @@ import { ConnectedLegs } from '../components/ConnectedLegs';
 import { PassengerBubble } from '../components/PassengerBubble';
 import { SectionLabel } from '../components/SectionLabel';
 import { passengers, type PassengerId } from '../data/passengers';
-import { trips } from '../data/trips';
+import { useTripsData } from '../data/TripsDataContext';
+import { type Trip } from '../data/trips';
 import { theme } from '../theme/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -92,17 +93,18 @@ function getWhoIsFlyingData(
   };
 }
 
-function getBooking(tripId: string, bookingId: string) {
+function getBooking(trips: Trip[], tripId: string, bookingId: string) {
   const trip = trips.find((item) => item.id === tripId);
   return trip?.bookings.find((item) => item.id === bookingId);
 }
 
 export function FlightDetailScreen({ navigation, route }: Props) {
+  const { trips } = useTripsData();
   const bookingId =
     (route.params as RootStackParamList['FlightDetail'] & { bookingId?: string }).bookingId ??
     route.params.flightId;
 
-  const booking = getBooking(route.params.tripId, bookingId);
+  const booking = getBooking(trips, route.params.tripId, bookingId);
   const firstLeg = booking?.legs[0];
   const lastLeg = booking?.legs[booking.legs.length - 1];
   const whoIsFlying = booking ? getWhoIsFlyingData(booking) : { flyers: [], noSeatsBooked: false };

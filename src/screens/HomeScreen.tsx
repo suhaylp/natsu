@@ -19,7 +19,7 @@ import {
   SECRET_GREETINGS,
   TODAY_MEMORY,
 } from '../data/homeContent';
-import { trips } from '../data/trips';
+import { useTripsData } from '../data/TripsDataContext';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { theme } from '../theme/theme';
 
@@ -68,6 +68,7 @@ function parseNearestFutureDate(dateToken: string, now: Date): Date | null {
 
 export function HomeScreen({ navigation }: Props) {
   const [currentMessage, setCurrentMessage] = useState<string>(HOME_SCREEN_COPY.initialGreeting);
+  const { trips } = useTripsData();
 
   const messageOpacity = useRef(new Animated.Value(1)).current;
   const today = new Date();
@@ -332,51 +333,6 @@ export function HomeScreen({ navigation }: Props) {
 
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => navigation.navigate('MoneyStuff')}
-            style={{ marginTop: theme.spacing.lg }}
-          >
-            <GlassCard>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'space-between',
-                  marginVertical: -6,
-                }}
-              >
-                <View style={{ flex: 1, marginRight: theme.spacing.md }}>
-                  <Text style={{ fontSize: 18, fontWeight: '600', color: theme.colors.textPrimary }}>
-                    💰 Money stuff
-                  </Text>
-                  <Text
-                    style={{
-                      fontSize: 13,
-                      color: theme.colors.textSecondary,
-                      marginTop: theme.spacing.xs,
-                    }}
-                  >
-                    Saving for the future muahahah
-                  </Text>
-                </View>
-
-                <View
-                  style={{
-                    width: theme.spacing.xxxl,
-                    height: theme.spacing.xxxl,
-                    borderRadius: theme.spacing.lg,
-                    backgroundColor: theme.colors.accentLight,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  <Text style={{ fontSize: theme.spacing.lg, color: theme.colors.accent, fontWeight: '600' }}>→</Text>
-                </View>
-              </View>
-            </GlassCard>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            activeOpacity={0.8}
             onPress={() => navigation.navigate('UpcomingFun')}
             style={{ marginTop: theme.spacing.lg }}
           >
@@ -401,6 +357,51 @@ export function HomeScreen({ navigation }: Props) {
                     }}
                   >
                     So many plans...
+                  </Text>
+                </View>
+
+                <View
+                  style={{
+                    width: theme.spacing.xxxl,
+                    height: theme.spacing.xxxl,
+                    borderRadius: theme.spacing.lg,
+                    backgroundColor: theme.colors.accentLight,
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  <Text style={{ fontSize: theme.spacing.lg, color: theme.colors.accent, fontWeight: '600' }}>→</Text>
+                </View>
+              </View>
+            </GlassCard>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.8}
+            onPress={() => navigation.navigate('MoneyStuff')}
+            style={{ marginTop: theme.spacing.lg }}
+          >
+            <GlassCard>
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  marginVertical: -6,
+                }}
+              >
+                <View style={{ flex: 1, marginRight: theme.spacing.md }}>
+                  <Text style={{ fontSize: 18, fontWeight: '600', color: theme.colors.textPrimary }}>
+                    💰 Money stuff
+                  </Text>
+                  <Text
+                    style={{
+                      fontSize: 13,
+                      color: theme.colors.textSecondary,
+                      marginTop: theme.spacing.xs,
+                    }}
+                  >
+                    Saving for the future muahahah
                   </Text>
                 </View>
 

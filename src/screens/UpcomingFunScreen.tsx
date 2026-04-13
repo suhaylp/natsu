@@ -3,35 +3,44 @@ import { Image, ScrollView, StatusBar, Text, TouchableOpacity, View } from 'reac
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StackScreenProps } from '@react-navigation/stack';
 import { GlassCard } from '../components/GlassCard';
+import { useTripsData } from '../data/TripsDataContext';
+import { tripPhotos } from '../data/tripPhotos';
+import { type Booking } from '../data/trips';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { theme } from '../theme/theme';
 
 type Props = StackScreenProps<RootStackParamList, 'UpcomingFun'>;
 
+type EventCategory = 'Music' | 'Events' | 'Other';
+
 type EventItem = {
-  id: number;
+  id: string;
   title: string;
   date: Date;
   dateLabel: string;
   location: string;
-  category: string;
+  category: EventCategory;
   confirmed: boolean;
   image: number;
+  tripId?: string;
+  bookingId?: string;
+  notes?: string;
 };
 
-const EVENTS: EventItem[] = [
+const MANUAL_EVENTS: EventItem[] = [
   {
-    id: 1,
-    title: 'Night Garden – Harrison Tulip Festival',
+    id: 'manual-1',
+    title: 'Night Garden - Harrison Tulip Festival',
     date: new Date('2026-04-18'),
-    dateLabel: 'Sat Apr 18 · 4:00 – 10:00pm',
+    dateLabel: 'Sat Apr 18 · 4:00 - 10:00pm',
     location: '5039 Lougheed Hwy, Harrison',
     category: 'Events',
     confirmed: true,
     image: require('../../assets/photos/harrison.jpg'),
+    notes: 'Bring jackets for the evening temperature drop.',
   },
   {
-    id: 2,
+    id: 'manual-2',
     title: 'Escapade Music Festival',
     date: new Date('2026-06-01'),
     dateLabel: 'Jun 2026',
@@ -41,7 +50,7 @@ const EVENTS: EventItem[] = [
     image: require('../../assets/photos/esapade.jpg'),
   },
   {
-    id: 3,
+    id: 'manual-3',
     title: 'FVDED in the Park',
     date: new Date('2026-07-01'),
     dateLabel: 'Jul 2026',
@@ -51,7 +60,7 @@ const EVENTS: EventItem[] = [
     image: require('../../assets/photos/fvded.jpg'),
   },
   {
-    id: 4,
+    id: 'manual-4',
     title: 'Tame Impala',
     date: new Date('2026-08-01'),
     dateLabel: 'Aug 2026',
@@ -65,8 +74,27 @@ const EVENTS: EventItem[] = [
 const FILTERS = ['All', 'Music', 'Events', 'Other'] as const;
 type FilterOption = (typeof FILTERS)[number];
 
+const monthMap: Record<string, number> = {
+  Jan: 0,
+  Feb: 1,
+  Mar: 2,
+  Apr: 3,
+  May: 4,
+  Jun: 5,
+  Jul: 6,
+  Aug: 7,
+  Sep: 8,
+  Oct: 9,
+  Nov: 10,
+  Dec: 11,
+};
+
 function getDaysUntil(date: Date): number {
-  return Math.ceil((date.getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const eventDate = new Date(date);
+  eventDate.setHours(0, 0, 0, 0);
+  return Math.ceil((eventDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 function matchesFilter(event: EventItem, filter: FilterOption): boolean {
@@ -89,6 +117,59 @@ function matchesFilter(event: EventItem, filter: FilterOption): boolean {
   return false;
 }
 
+function getTripYear(dateRange: string): number {
+  const yearMatches = dateRange.match(/\b(20\d{2})\b/g);
+  if (yearMatches && yearMatches.length > 0) {
+    return Number(yearMatches[yearMatches.length - 1]);
+  }
+
+  return new Date().getFullYear();
+}
+
+function parseTripDate(dateToken: string, year: number): Date | null {
+  const [monthToken, dayToken] = dateToken.trim().split(' ');
+  const month = monthMap[monthToken];
+  const day = Number(dayToken);
+
+  if (month === undefined || Number.isNaN(day)) {
+    return null;
+  }
+
+  const parsedDate = new Date(year, month, day);
+  parsedDate.setHours(0, 0, 0, 0);
+  return parsedDate;
+}
+
+function isBookingEventType(booking: Booking): booking is Booking & { type: 'event' | 'concert' | 'festival' } {
+  return booking.type === 'event' || booking.type === 'concert' || booking.type === 'festival';
+}
+
+function getEventCategoryFromBookingType(type: Booking['type']): EventCategory {
+  if (type === 'concert' || type === 'festival') {
+    return 'Music';
+  }
+  if (type === 'event') {
+    return 'Events';
+  }
+  return 'Other';
+}
+
+function getEventImageForBooking(booking: Booking, tripId: string): number {
+  if (booking.type === 'concert') {
+    return require('../../assets/photos/tameimpala.jpg');
+  }
+
+  if (booking.type === 'festival') {
+    return require('../../assets/photos/fvded.jpg');
+  }
+
+  if (booking.type === 'event') {
+    return require('../../assets/photos/harrison.jpg');
+  }
+
+  return tripPhotos[tripId]?.[0] ?? require('../../assets/photos/newyears1.jpg');
+}
+
 function PhotoAttachment({ source, height }: { source: number; height: number }) {
   return (
     <View
@@ -109,18 +190,82 @@ function PhotoAttachment({ source, height }: { source: number; height: number })
 
 export function UpcomingFunScreen({ navigation }: Props) {
   const [activeFilter, setActiveFilter] = useState<FilterOption>('All');
+  const { trips } = useTripsData();
+
+  const tripEvents = useMemo(() => {
+    return trips.flatMap((trip) => {
+      const tripYear = getTripYear(trip.dateRange);
+
+      return trip.bookings
+        .filter((booking) => isBookingEventType(booking))
+        .map((booking) => {
+          const dateToken = booking.activityDate ?? booking.legs[0]?.departureDate;
+          if (!dateToken) {
+            return null;
+          }
+
+          const parsedDate = parseTripDate(dateToken, tripYear);
+          if (!parsedDate) {
+            return null;
+          }
+
+          return {
+            id: `trip-${trip.id}-${booking.id}`,
+            title: booking.label,
+            date: parsedDate,
+            dateLabel: [booking.activityDate ?? dateToken, booking.activityTime].filter(Boolean).join(' · '),
+            location: booking.activityLocation ?? trip.title,
+            category: getEventCategoryFromBookingType(booking.type),
+            confirmed: booking.status === 'booked',
+            image: getEventImageForBooking(booking, trip.id),
+            tripId: trip.id,
+            bookingId: booking.id,
+            notes: booking.notes,
+          } as EventItem;
+        })
+        .filter((event): event is EventItem => Boolean(event));
+    });
+  }, [trips]);
+
+  const allEvents = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    return [...MANUAL_EVENTS, ...tripEvents]
+      .filter((event) => event.date.getTime() >= today.getTime())
+      .sort((a, b) => a.date.getTime() - b.date.getTime());
+  }, [tripEvents]);
 
   const filteredEvents = useMemo(() => {
-    const sorted = [...EVENTS].sort((a, b) => a.date.getTime() - b.date.getTime());
-    const withDays = sorted.map((event) => ({
-      ...event,
-      daysUntil: getDaysUntil(event.date),
-    }));
-    return withDays.filter((event) => matchesFilter(event, activeFilter));
-  }, [activeFilter]);
+    return allEvents
+      .map((event) => ({
+        ...event,
+        daysUntil: getDaysUntil(event.date),
+      }))
+      .filter((event) => matchesFilter(event, activeFilter));
+  }, [activeFilter, allEvents]);
 
   const heroEvent = filteredEvents[0];
   const laterEvents = filteredEvents.slice(1);
+
+  const openEventDetail = (event: EventItem) => {
+    if (event.tripId && event.bookingId) {
+      navigation.navigate('EventDetail', {
+        tripId: event.tripId,
+        bookingId: event.bookingId,
+      });
+      return;
+    }
+
+    navigation.navigate('EventDetail', {
+      title: event.title,
+      dateLabel: event.dateLabel,
+      location: event.location,
+      category: event.category,
+      notes: event.notes,
+      confirmed: event.confirmed,
+    });
+  };
 
   return (
     <SafeAreaView style={styles.screen}>
@@ -189,7 +334,7 @@ export function UpcomingFunScreen({ navigation }: Props) {
         </ScrollView>
 
         {heroEvent ? (
-          <View style={{ marginBottom: theme.spacing.md }}>
+          <TouchableOpacity activeOpacity={0.85} onPress={() => openEventDetail(heroEvent)} style={{ marginBottom: theme.spacing.md }}>
             <PhotoAttachment source={heroEvent.image} height={160} />
 
             <GlassCard
@@ -235,7 +380,7 @@ export function UpcomingFunScreen({ navigation }: Props) {
                 <Text style={{ color: theme.colors.accent, fontSize: 24 }}>→</Text>
               </View>
             </GlassCard>
-          </View>
+          </TouchableOpacity>
         ) : (
           <GlassCard>
             <Text style={{ ...theme.typography.body, color: theme.colors.textSecondary }}>No events for this filter yet.</Text>
@@ -247,7 +392,7 @@ export function UpcomingFunScreen({ navigation }: Props) {
             <Text style={styles.sectionLabel}>LATER THIS YEAR</Text>
 
             {laterEvents.map((event) => (
-              <View key={event.id} style={{ marginBottom: theme.spacing.sm }}>
+              <TouchableOpacity key={event.id} activeOpacity={0.85} onPress={() => openEventDetail(event)} style={{ marginBottom: theme.spacing.sm }}>
                 <PhotoAttachment source={event.image} height={136} />
 
                 <GlassCard
@@ -282,7 +427,7 @@ export function UpcomingFunScreen({ navigation }: Props) {
                     <Text style={{ color: theme.colors.accent, fontSize: 24 }}>→</Text>
                   </View>
                 </GlassCard>
-              </View>
+              </TouchableOpacity>
             ))}
           </>
         ) : null}

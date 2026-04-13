@@ -1,6 +1,7 @@
 // ── navigation/AppNavigator.tsx ──
 import { CardStyleInterpolators, createStackNavigator } from '@react-navigation/stack';
 import { ComingSoonScreen } from '../screens/ComingSoonScreen';
+import { EventDetailScreen } from '../screens/EventDetailScreen';
 import { FlightDetailScreen } from '../screens/FlightDetailScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { MoneyStuffScreen } from '../screens/MoneyStuffScreen';
@@ -13,6 +14,16 @@ export type RootStackParamList = {
   Trips: undefined;
   TripDetail: { tripId: string };
   FlightDetail: { tripId: string; flightId: string };
+  EventDetail: {
+    tripId?: string;
+    bookingId?: string;
+    title?: string;
+    dateLabel?: string;
+    location?: string;
+    category?: string;
+    notes?: string;
+    confirmed?: boolean;
+  };
   ComingSoon: { title: string };
   MoneyStuff: undefined;
   UpcomingFun: undefined;
@@ -34,6 +45,7 @@ export function AppNavigator() {
       <Stack.Screen name="Trips" component={TripsScreen} />
       <Stack.Screen name="TripDetail" component={TripDetailScreen} />
       <Stack.Screen name="FlightDetail" component={FlightDetailScreen} />
+      <Stack.Screen name="EventDetail" component={EventDetailScreen} />
       <Stack.Screen name="ComingSoon" component={ComingSoonScreen} />
       <Stack.Screen name="MoneyStuff" component={MoneyStuffScreen} />
       <Stack.Screen name="UpcomingFun" component={UpcomingFunScreen} />

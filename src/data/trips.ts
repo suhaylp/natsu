@@ -1,4 +1,13 @@
 type BookingStatus = 'booked' | 'not_booked';
+type BookingType =
+  | 'flight'
+  | 'train'
+  | 'bus'
+  | 'event'
+  | 'concert'
+  | 'festival'
+  | 'ferry'
+  | 'food-tour';
 
 type FlightLeg = {
   flightNumber: string;
@@ -21,7 +30,7 @@ type Baggage = {
 
 type Booking = {
   id: string;
-  type: 'flight' | 'train';
+  type: BookingType;
   status: BookingStatus;
   label: string;
   airline?: string;
@@ -29,6 +38,9 @@ type Booking = {
   legs: FlightLeg[];
   baggage?: Baggage;
   notes?: string;
+  activityDate?: string;
+  activityTime?: string;
+  activityLocation?: string;
 };
 
 type Trip = {
@@ -39,7 +51,7 @@ type Trip = {
   bookings: Booking[];
 };
 
-export type { Booking, BookingStatus, FlightLeg, Trip };
+export type { Booking, BookingStatus, BookingType, FlightLeg, Trip };
 
 export const trips: Trip[] = [
   {
@@ -230,6 +242,159 @@ export const trips: Trip[] = [
         baggage: {
           carryOn: '1 carry-on each',
           checkIn: '0 check-in each',
+        },
+      },
+    ],
+  },
+  {
+    id: 'euro-rails-fests',
+    title: 'Europe Rail + Festivals',
+    emoji: '🚆🎶',
+    dateRange: 'Sep 3 – 19, 2026',
+    bookings: [
+      {
+        id: 'yvr-lhr',
+        type: 'flight',
+        status: 'booked',
+        label: 'Vancouver → London',
+        airline: 'British Airways',
+        bookingRef: 'R7X2QP',
+        legs: [
+          {
+            flightNumber: 'BA084',
+            fromCity: 'Vancouver',
+            fromCode: 'YVR',
+            toCity: 'London Heathrow',
+            toCode: 'LHR',
+            departureTime: '20:25',
+            departureDate: 'Sep 3',
+            arrivalTime: '13:05',
+            arrivalDate: 'Sep 4',
+            duration: '9h 40m',
+            seats: 'not_assigned',
+          },
+        ],
+        baggage: {
+          carryOn: '1 carry-on each',
+          checkIn: '1 check-in each',
+        },
+      },
+      {
+        id: 'lhr-par-train',
+        type: 'train',
+        status: 'booked',
+        label: 'London → Paris (Eurostar)',
+        bookingRef: 'ES92KT',
+        legs: [
+          {
+            flightNumber: 'EUROSTAR 9032',
+            fromCity: 'London St Pancras',
+            fromCode: 'STP',
+            toCity: 'Paris Gare du Nord',
+            toCode: 'GDN',
+            departureTime: '09:01',
+            departureDate: 'Sep 6',
+            arrivalTime: '12:20',
+            arrivalDate: 'Sep 6',
+            duration: '2h 19m',
+          },
+        ],
+      },
+      {
+        id: 'par-bru-bus',
+        type: 'bus',
+        status: 'booked',
+        label: 'Paris → Brussels (FlixBus)',
+        bookingRef: 'FLXK3D',
+        legs: [
+          {
+            flightNumber: 'FLX 1650',
+            fromCity: 'Paris Bercy',
+            fromCode: 'PBY',
+            toCity: 'Brussels North',
+            toCode: 'BRU-N',
+            departureTime: '07:45',
+            departureDate: 'Sep 9',
+            arrivalTime: '11:35',
+            arrivalDate: 'Sep 9',
+            duration: '3h 50m',
+          },
+        ],
+      },
+      {
+        id: 'bru-night-market',
+        type: 'event',
+        status: 'booked',
+        label: 'Grand Place Night Market',
+        legs: [],
+        activityDate: 'Sep 9',
+        activityTime: '19:00 - 22:00',
+        activityLocation: 'Grand Place, Brussels',
+        notes: 'Sep 9 · Street food + local craft stalls',
+      },
+      {
+        id: 'ams-concert',
+        type: 'concert',
+        status: 'not_booked',
+        label: 'Open-air indie concert in Amsterdam',
+        legs: [],
+        activityDate: 'Sep 12',
+        activityTime: '20:30',
+        activityLocation: 'NDSM Wharf, Amsterdam',
+        notes: 'Sep 12 · Waiting for lineup announcements',
+      },
+      {
+        id: 'rot-festival',
+        type: 'festival',
+        status: 'not_booked',
+        label: 'Rotterdam Rooftop Festival',
+        legs: [],
+        activityDate: 'Sep 13',
+        activityTime: '14:00 - 23:00',
+        activityLocation: 'Rotterdam City Center',
+        notes: 'Sep 13 · Tickets drop in June',
+      },
+      {
+        id: 'bru-canal-ferry',
+        type: 'ferry',
+        status: 'not_booked',
+        label: 'Canal ferry day pass',
+        legs: [],
+        notes: 'Sep 10 · Flexible transport across city center',
+      },
+      {
+        id: 'paris-food-tour',
+        type: 'food-tour',
+        status: 'not_booked',
+        label: 'Le Marais evening food tour',
+        legs: [],
+        notes: 'Sep 7 · Reserve if weather is clear',
+      },
+      {
+        id: 'lhr-yvr',
+        type: 'flight',
+        status: 'booked',
+        label: 'London → Vancouver',
+        airline: 'Air Canada',
+        bookingRef: 'XJZ4LH',
+        legs: [
+          {
+            flightNumber: 'AC861',
+            fromCity: 'London Heathrow',
+            fromCode: 'LHR',
+            toCity: 'Vancouver',
+            toCode: 'YVR',
+            departureTime: '14:10',
+            departureDate: 'Sep 19',
+            arrivalTime: '15:45',
+            arrivalDate: 'Sep 19',
+            duration: '9h 35m',
+            seats: 'not_assigned',
+          },
+        ],
+        baggage: {
+          carryOn: '1 carry-on each',
+          checkIn: '1 check-in each',
         },
       },
     ],

@@ -9,4 +9,9 @@ export const tripPhotos: Record<string, number[]> = {
     require('../../assets/photos/vietnam.jpg'),
     require('../../assets/photos/japan.jpg'),
   ],
+  'euro-rails-fests': [
+    require('../../assets/photos/esapade.jpg'),
+    require('../../assets/photos/fvded.jpg'),
+    require('../../assets/photos/newyears1.jpg'),
+  ],
 };

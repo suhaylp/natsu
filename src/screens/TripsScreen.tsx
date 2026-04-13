@@ -1,13 +1,14 @@
 // ── screens/TripsScreen.tsx ──
 import { useMemo, useState } from 'react';
-import { Image, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { Image, RefreshControl, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { StackScreenProps } from '@react-navigation/stack';
 import { GlassCard } from '../components/GlassCard';
 import { tripPhotos } from '../data/tripPhotos';
-import { trips, type Trip } from '../data/trips';
+import { useTripsData } from '../data/TripsDataContext';
+import { type Trip } from '../data/trips';
 import { theme } from '../theme/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -68,6 +69,7 @@ function getDayDiff(fromDate: Date, toDate: Date): number {
 export function TripsScreen({ navigation }: Props) {
   const [showPastTrips, setShowPastTrips] = useState(false);
   const [photoIndexByTrip, setPhotoIndexByTrip] = useState<Record<string, number>>({});
+  const { trips, isLoading, error, lastSyncedAt, refresh } = useTripsData();
   const { width } = useWindowDimensions();
   const cardSlideWidth = width - theme.spacing.xl * 2;
 
@@ -80,7 +82,7 @@ export function TripsScreen({ navigation }: Props) {
         trip,
         startDate: getTripStartDate(trip),
       })),
-    []
+    [trips]
   );
 
   const upcomingTrips = useMemo(
@@ -117,6 +119,18 @@ export function TripsScreen({ navigation }: Props) {
 
   const nextTrip = upcomingTrips.find((item) => item.startDate);
   const nextTripCountdown = nextTrip?.startDate ? getDayDiff(today, nextTrip.startDate) : null;
+  const lastSyncedLabel = useMemo(() => {
+    if (!lastSyncedAt) {
+      return null;
+    }
+
+    const parsedDate = new Date(lastSyncedAt);
+    if (Number.isNaN(parsedDate.getTime())) {
+      return null;
+    }
+
+    return `Last synced ${parsedDate.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+  }, [lastSyncedAt]);
 
   const renderTripCard = (trip: Trip, key: string) => {
     const confirmedCount = trip.bookings.filter((booking) => booking.status === 'booked').length;
@@ -335,6 +349,7 @@ export function TripsScreen({ navigation }: Props) {
         </View>
 
         <ScrollView
+          refreshControl={<RefreshControl refreshing={isLoading} onRefresh={() => void refresh()} />}
           contentContainerStyle={{
             paddingTop: theme.spacing.sm,
             paddingBottom: theme.spacing.xxl,
@@ -375,6 +390,45 @@ export function TripsScreen({ navigation }: Props) {
                 pastTrips.map(({ trip }) => renderTripCard(trip, `past-${trip.id}`))
               )}
             </View>
+          ) : null}
+
+          {isLoading ? (
+            <Text
+              style={{
+                ...theme.typography.caption,
+                color: theme.colors.textMuted,
+                marginHorizontal: theme.spacing.xl,
+                marginTop: theme.spacing.sm,
+              }}
+            >
+              Syncing...
+            </Text>
+          ) : null}
+
+          {!isLoading && lastSyncedLabel ? (
+            <Text
+              style={{
+                ...theme.typography.caption,
+                color: theme.colors.textMuted,
+                marginHorizontal: theme.spacing.xl,
+                marginTop: theme.spacing.sm,
+              }}
+            >
+              {lastSyncedLabel}
+            </Text>
+          ) : null}
+
+          {error ? (
+            <Text
+              style={{
+                ...theme.typography.caption,
+                color: '#A84B4B',
+                marginHorizontal: theme.spacing.xl,
+                marginTop: theme.spacing.xs,
+              }}
+            >
+              {`Sync issue: ${error}`}
+            </Text>
           ) : null}
         </ScrollView>
       </SafeAreaView>
