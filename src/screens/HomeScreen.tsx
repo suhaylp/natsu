@@ -1,3 +1,5 @@
+import { StackScreenProps } from '@react-navigation/stack';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRef, useState } from 'react';
 import {
   Animated,
@@ -10,8 +12,6 @@ import {
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
-import { StackScreenProps } from '@react-navigation/stack';
 import { GlassCard } from '../components/GlassCard';
 import {
   HOME_SCREEN_COPY,
@@ -20,15 +20,72 @@ import {
   TODAY_MEMORY,
 } from '../data/homeContent';
 import { trips } from '../data/trips';
-import { theme } from '../theme/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
+import { theme } from '../theme/theme';
 
 type Props = StackScreenProps<RootStackParamList, 'Home'>;
+
+const monthMap: Record<string, number> = {
+  Jan: 0,
+  Feb: 1,
+  Mar: 2,
+  Apr: 3,
+  May: 4,
+  Jun: 5,
+  Jul: 6,
+  Aug: 7,
+  Sep: 8,
+  Oct: 9,
+  Nov: 10,
+  Dec: 11,
+};
+
+function parseNearestFutureDate(dateToken: string, now: Date): Date | null {
+  try {
+    const [monthToken, dayToken] = dateToken.trim().split(' ');
+    const month = monthMap[monthToken];
+    const day = Number(dayToken);
+
+    if (month === undefined || Number.isNaN(day)) {
+      return null;
+    }
+
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+
+    const candidate = new Date(today.getFullYear(), month, day);
+    candidate.setHours(0, 0, 0, 0);
+
+    if (candidate < today) {
+      candidate.setFullYear(candidate.getFullYear() + 1);
+    }
+
+    return candidate;
+  } catch {
+    return null;
+  }
+}
 
 export function HomeScreen({ navigation }: Props) {
   const [currentMessage, setCurrentMessage] = useState<string>(HOME_SCREEN_COPY.initialGreeting);
 
   const messageOpacity = useRef(new Animated.Value(1)).current;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const nextTripDate = trips
+    .flatMap((trip) =>
+      trip.bookings
+        .filter((booking) => booking.status === 'booked')
+        .map((booking) => booking.legs[0]?.departureDate)
+        .filter((departureDate): departureDate is string => Boolean(departureDate))
+    )
+    .map((departureDate) => parseNearestFutureDate(departureDate, today))
+    .filter((date): date is Date => Boolean(date))
+    .sort((a, b) => a.getTime() - b.getTime())[0];
+
+  const daysUntilNextTrip =
+    nextTripDate !== undefined ? Math.ceil((nextTripDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)) : null;
 
   const shuffleMessage = () => {
     if (SECRET_GREETINGS.length === 0) {
@@ -63,13 +120,16 @@ export function HomeScreen({ navigation }: Props) {
       colors={[theme.colors.backgroundGradientStart, theme.colors.backgroundGradientEnd]}
       style={{ flex: 1 }}
     >
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar barStyle="dark-content" />
+      <SafeAreaView style={{ flex: 1 }} edges={['left', 'right']}>
+        <StatusBar hidden />
 
         <ScrollView
+          scrollEnabled={false}
+          bounces={false}
           contentContainerStyle={{
             paddingHorizontal: theme.spacing.xxl,
-            paddingBottom: theme.spacing.xxxxl,
+            paddingTop: theme.spacing.xxxl,
+            paddingBottom: theme.spacing.xxxxl + theme.spacing.xxxl,
           }}
           showsVerticalScrollIndicator={false}
         >
@@ -81,20 +141,25 @@ export function HomeScreen({ navigation }: Props) {
               marginBottom: theme.spacing.sm,
             }}
           >
-            <Animated.Text
-              style={{
-                fontSize: 14,
-                color: '#5a8a6a',
-                fontWeight: '500',
-                letterSpacing: 0.8,
-                textTransform: 'uppercase',
-                marginBottom: 2,
-                opacity: messageOpacity,
-                textAlign: 'left',
-              }}
+            <TouchableOpacity
+              activeOpacity={0.75}
+              onPress={shuffleMessage}
+              style={{ paddingVertical: theme.spacing.xs, marginBottom: 2 }}
             >
-              {currentMessage}
-            </Animated.Text>
+              <Animated.Text
+                style={{
+                  fontSize: 14,
+                  color: '#5a8a6a',
+                  fontWeight: '500',
+                  letterSpacing: 0.8,
+                  textTransform: 'uppercase',
+                  opacity: messageOpacity,
+                  textAlign: 'left',
+                }}
+              >
+                {currentMessage}
+              </Animated.Text>
+            </TouchableOpacity>
 
             <Text
               style={{
@@ -212,7 +277,7 @@ export function HomeScreen({ navigation }: Props) {
           <TouchableOpacity
             activeOpacity={0.8}
             onPress={() => navigation.navigate('Trips')}
-            style={{ marginTop: theme.spacing.xxl }}
+            style={{ marginTop: theme.spacing.lg }}
           >
             <GlassCard>
               <View
@@ -220,21 +285,24 @@ export function HomeScreen({ navigation }: Props) {
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  marginVertical: -2,
                 }}
               >
                 <View style={{ flex: 1, marginRight: theme.spacing.md }}>
-                  <Text style={{ fontSize: theme.spacing.lg, fontWeight: '600', color: theme.colors.textPrimary }}>
-                    Travelling the world
+                  <Text style={{ fontSize: 18, fontWeight: '600', color: theme.colors.textPrimary }}>
+                    ✈️ Travelling the world
                   </Text>
                   <Text
                     style={{
-                      fontSize: theme.spacing.md,
-                      color: theme.colors.textMuted,
+                      fontSize: 13,
+                      color: theme.colors.textSecondary,
                       marginTop: theme.spacing.xs,
                     }}
                     numberOfLines={1}
                   >
-                    {`${trips.length} trips upcoming`}
+                    {daysUntilNextTrip !== null
+                      ? `${daysUntilNextTrip} ${daysUntilNextTrip === 1 ? 'day' : 'days'} until our next trip`
+                      : 'Our next trip is coming soon'}
                   </Text>
                 </View>
 
@@ -243,12 +311,20 @@ export function HomeScreen({ navigation }: Props) {
                     width: theme.spacing.xxxl,
                     height: theme.spacing.xxxl,
                     borderRadius: theme.spacing.lg,
-                    backgroundColor: theme.colors.accent,
+                    backgroundColor: theme.colors.accentLight,
                     alignItems: 'center',
                     justifyContent: 'center',
                   }}
                 >
-                  <Text style={{ fontSize: theme.spacing.lg, color: theme.colors.cardBorder, fontWeight: '600' }}>→</Text>
+                  <Text
+                    style={{
+                      fontSize: theme.spacing.lg,
+                      color: theme.colors.accent,
+                      fontWeight: '600',
+                    }}
+                  >
+                    →
+                  </Text>
                 </View>
               </View>
             </GlassCard>
@@ -256,7 +332,7 @@ export function HomeScreen({ navigation }: Props) {
 
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => navigation.navigate('ComingSoon', { title: 'Money stuff' })}
+            onPress={() => navigation.navigate('MoneyStuff')}
             style={{ marginTop: theme.spacing.lg }}
           >
             <GlassCard>
@@ -265,20 +341,21 @@ export function HomeScreen({ navigation }: Props) {
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  marginVertical: -6,
                 }}
               >
                 <View style={{ flex: 1, marginRight: theme.spacing.md }}>
-                  <Text style={{ fontSize: theme.spacing.lg, fontWeight: '600', color: theme.colors.textPrimary }}>
-                    Money stuff
+                  <Text style={{ fontSize: 18, fontWeight: '600', color: theme.colors.textPrimary }}>
+                    💰 Money stuff
                   </Text>
                   <Text
                     style={{
-                      fontSize: theme.spacing.md,
-                      color: theme.colors.textMuted,
+                      fontSize: 13,
+                      color: theme.colors.textSecondary,
                       marginTop: theme.spacing.xs,
                     }}
                   >
-                    Coming soon...
+                    Saving for the future muahahah
                   </Text>
                 </View>
 
@@ -300,7 +377,7 @@ export function HomeScreen({ navigation }: Props) {
 
           <TouchableOpacity
             activeOpacity={0.8}
-            onPress={() => navigation.navigate('ComingSoon', { title: 'Upcoming FUN!!' })}
+            onPress={() => navigation.navigate('UpcomingFun')}
             style={{ marginTop: theme.spacing.lg }}
           >
             <GlassCard>
@@ -309,20 +386,21 @@ export function HomeScreen({ navigation }: Props) {
                   flexDirection: 'row',
                   alignItems: 'center',
                   justifyContent: 'space-between',
+                  marginVertical: -6,
                 }}
               >
                 <View style={{ flex: 1, marginRight: theme.spacing.md }}>
-                  <Text style={{ fontSize: theme.spacing.lg, fontWeight: '600', color: theme.colors.textPrimary }}>
-                    Upcoming FUN!!
+                  <Text style={{ fontSize: 18, fontWeight: '600', color: theme.colors.textPrimary }}>
+                    🎤 Upcoming events
                   </Text>
                   <Text
                     style={{
-                      fontSize: theme.spacing.md,
-                      color: theme.colors.textMuted,
+                      fontSize: 13,
+                      color: theme.colors.textSecondary,
                       marginTop: theme.spacing.xs,
                     }}
                   >
-                    Coming soon...
+                    So many plans...
                   </Text>
                 </View>
 
@@ -342,9 +420,7 @@ export function HomeScreen({ navigation }: Props) {
             </GlassCard>
           </TouchableOpacity>
 
-          <TouchableOpacity
-            activeOpacity={0.9}
-            onPress={shuffleMessage}
+          <View
             style={{
               alignSelf: 'center',
               marginTop: theme.spacing.xxxl,
@@ -355,7 +431,7 @@ export function HomeScreen({ navigation }: Props) {
             <Text style={{ fontSize: theme.spacing.sm + 3, color: theme.colors.textMuted }}>
               Made by Suhayl (with love) ♥ 2026
             </Text>
-          </TouchableOpacity>
+          </View>
         </ScrollView>
       </SafeAreaView>
     </LinearGradient>

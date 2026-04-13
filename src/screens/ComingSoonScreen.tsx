@@ -19,28 +19,32 @@ export function ComingSoonScreen({ navigation, route }: Props) {
 
         <View
           style={{
-            paddingHorizontal: theme.spacing.xl,
+            paddingHorizontal: theme.spacing.xxl,
             paddingTop: theme.spacing.sm,
-            paddingBottom: theme.spacing.md,
-            justifyContent: 'center',
+            paddingBottom: theme.spacing.lg,
           }}
         >
           <TouchableOpacity
             activeOpacity={0.75}
             onPress={() => navigation.goBack()}
             style={{
-              position: 'absolute',
-              left: theme.spacing.xl,
-              top: theme.spacing.sm,
+              alignSelf: 'flex-start',
               paddingRight: theme.spacing.md,
               paddingVertical: theme.spacing.xs,
-              zIndex: 1,
             }}
           >
             <Text style={{ color: theme.colors.textPrimary, fontSize: 32, lineHeight: 32 }}>‹</Text>
           </TouchableOpacity>
 
-          <Text style={{ ...theme.typography.h2, color: theme.colors.textPrimary, textAlign: 'center' }}>
+          <Text
+            style={{
+              fontSize: 32,
+              fontWeight: '500',
+              color: theme.colors.textPrimary,
+              lineHeight: 36,
+              textAlign: 'left',
+            }}
+          >
             {route.params.title}
           </Text>
         </View>
@@ -61,7 +65,7 @@ export function ComingSoonScreen({ navigation, route }: Props) {
                 paddingVertical: theme.spacing.xxxl,
               }}
             >
-              <Text style={{ ...theme.typography.h2, color: theme.colors.textPrimary }}>Coming soon...</Text>
+              <Text style={{ ...theme.typography.h2, color: theme.colors.textPrimary }}>Work in progress</Text>
             </View>
           </GlassCard>
         </View>

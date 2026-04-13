@@ -1,11 +1,13 @@
 // ── screens/TripDetailScreen.tsx ──
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { useState } from 'react';
+import { Image, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { StackScreenProps } from '@react-navigation/stack';
 import { GlassCard } from '../components/GlassCard';
 import { ConnectedLegs } from '../components/ConnectedLegs';
+import { tripPhotos } from '../data/tripPhotos';
 import { trips } from '../data/trips';
 import { theme } from '../theme/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
@@ -59,6 +61,9 @@ function getDayDateLabel(dateToken?: string): string {
 
 export function TripDetailScreen({ navigation, route }: Props) {
   const trip = trips.find((item) => item.id === route.params.tripId);
+  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
+  const { width } = useWindowDimensions();
+  const carouselWidth = width - theme.spacing.xl * 2;
 
   if (!trip) {
     return (
@@ -70,27 +75,31 @@ export function TripDetailScreen({ navigation, route }: Props) {
           <StatusBar style="dark" />
           <View
             style={{
-              paddingHorizontal: theme.spacing.xl,
+              paddingHorizontal: theme.spacing.xxl,
               paddingTop: theme.spacing.sm,
-              paddingBottom: theme.spacing.md,
-              justifyContent: 'center',
+              paddingBottom: theme.spacing.lg,
             }}
           >
             <TouchableOpacity
               activeOpacity={0.75}
               onPress={() => navigation.goBack()}
               style={{
-                position: 'absolute',
-                left: theme.spacing.xl,
-                top: theme.spacing.sm,
+                alignSelf: 'flex-start',
                 paddingRight: theme.spacing.md,
                 paddingVertical: theme.spacing.xs,
-                zIndex: 1,
               }}
             >
               <Text style={{ color: theme.colors.textPrimary, fontSize: 32, lineHeight: 32 }}>‹</Text>
             </TouchableOpacity>
-            <Text style={{ ...theme.typography.h2, color: theme.colors.textPrimary, textAlign: 'center' }}>
+            <Text
+              style={{
+                fontSize: 32,
+                fontWeight: '500',
+                color: theme.colors.textPrimary,
+                lineHeight: 36,
+                textAlign: 'left',
+              }}
+            >
               Trip
             </Text>
           </View>
@@ -115,29 +124,33 @@ export function TripDetailScreen({ navigation, route }: Props) {
 
         <View
           style={{
-            paddingHorizontal: theme.spacing.xl,
+            paddingHorizontal: theme.spacing.xxl,
             paddingTop: theme.spacing.sm,
-            paddingBottom: theme.spacing.md,
-            justifyContent: 'center',
+            paddingBottom: theme.spacing.lg,
           }}
         >
           <TouchableOpacity
             activeOpacity={0.75}
             onPress={() => navigation.goBack()}
             style={{
-              position: 'absolute',
-              left: theme.spacing.xl,
-              top: theme.spacing.sm,
+              alignSelf: 'flex-start',
               paddingRight: theme.spacing.md,
               paddingVertical: theme.spacing.xs,
-              zIndex: 1,
             }}
           >
             <Text style={{ color: theme.colors.textPrimary, fontSize: 32, lineHeight: 32 }}>‹</Text>
           </TouchableOpacity>
 
-          <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center' }}>
-            <Text style={{ ...theme.typography.h2, color: theme.colors.textPrimary, marginRight: theme.spacing.sm }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <Text
+              style={{
+                fontSize: 32,
+                fontWeight: '500',
+                color: theme.colors.textPrimary,
+                lineHeight: 36,
+                marginRight: theme.spacing.sm,
+              }}
+            >
               {trip.title}
             </Text>
             <Text style={{ fontSize: 24 }}>{trip.emoji}</Text>
@@ -150,6 +163,67 @@ export function TripDetailScreen({ navigation, route }: Props) {
             paddingBottom: theme.spacing.xxl,
           }}
         >
+          {tripPhotos[trip.id]?.length ? (
+            <View style={{ marginBottom: theme.spacing.lg }}>
+              <View
+                style={{
+                  borderRadius: theme.radii.card,
+                  overflow: 'hidden',
+                  shadowColor: '#1A3A2A',
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.1,
+                  shadowRadius: 20,
+                  elevation: 4,
+                }}
+              >
+                <ScrollView
+                  horizontal={true}
+                  pagingEnabled={true}
+                  showsHorizontalScrollIndicator={false}
+                  onMomentumScrollEnd={(event) => {
+                    const nextIndex = Math.round(event.nativeEvent.contentOffset.x / carouselWidth);
+                    setActivePhotoIndex(nextIndex);
+                  }}
+                >
+                  {tripPhotos[trip.id].map((photo, index) => (
+                    <Image
+                      key={`${trip.id}-photo-${index}`}
+                      source={photo}
+                      resizeMode="cover"
+                      style={{ width: carouselWidth, height: 220 }}
+                    />
+                  ))}
+                </ScrollView>
+              </View>
+
+              <View
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  marginTop: theme.spacing.sm,
+                }}
+              >
+                {tripPhotos[trip.id].map((_, index) => {
+                  const isActive = index === activePhotoIndex;
+                  return (
+                    <View
+                      key={`${trip.id}-dot-${index}`}
+                      style={{
+                        width: isActive ? 16 : 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: isActive ? theme.colors.accent : theme.colors.textMuted,
+                        opacity: isActive ? 1 : 0.35,
+                        marginHorizontal: 3,
+                      }}
+                    />
+                  );
+                })}
+              </View>
+            </View>
+          ) : null}
+
           <View style={{ paddingLeft: 48, position: 'relative' }}>
             <View
               style={{
