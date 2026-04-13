@@ -29,28 +29,52 @@ EXPO_PUBLIC_FLIGHTS_API_KEY=<same FLIGHTS_SYNC_API_KEY>
 ## Railway deployment
 
 1. Create new Railway project from this repo.
-2. Set start command to:
+2. Set **Root Directory** to repo root (leave blank unless your app is in a subfolder).
+3. Set **Start Command** to:
 
 ```bash
 npm run backend:start
 ```
 
-3. Add env vars in Railway:
+4. Set **Healthcheck Path** to:
+
+```bash
+/health
+```
+
+5. Add env vars in Railway:
 
 - `NOTION_TOKEN`
 - `NOTION_FLIGHTS_DB_ID`
 - `FLIGHTS_SYNC_API_KEY`
-- `PORT` (optional, Railway usually provides this automatically)
+- `PORT` (optional; Railway usually injects it automatically)
 
-4. After deploy, copy your Railway URL and set:
+6. After deploy, copy your Railway URL and set:
 
 ```env
 EXPO_PUBLIC_FLIGHTS_API_URL=https://<your-railway-domain>/api/flights
 EXPO_PUBLIC_FLIGHTS_API_KEY=<same FLIGHTS_SYNC_API_KEY>
 ```
 
-5. Restart Expo:
+7. Restart Expo:
 
 ```bash
 npx expo start -c
 ```
+
+## If Railway shows "Application failed to respond"
+
+1. Open the latest deployment logs and confirm the process starts with:
+
+```bash
+> npm run backend:start
+```
+
+2. Confirm logs include:
+
+```bash
+Backend listening on http://localhost:<port>
+```
+
+3. If you see `tsx: command not found`, redeploy from latest commit in this repo (tsx is now a production dependency).
+4. If `/health` still fails, verify the service target port matches Railway's public networking port and restart deployment.
