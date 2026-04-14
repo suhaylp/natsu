@@ -3,6 +3,7 @@ import flightsHandler from '../api/flights';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
+const host = '0.0.0.0';
 
 app.get('/health', (_req, res) => {
   res.status(200).json({ ok: true });
@@ -22,7 +23,7 @@ app.all('/api/flights', (req, res) => {
   });
 });
 
-app.listen(port, () => {
+app.listen(port, host, () => {
   // eslint-disable-next-line no-console
-  console.log(`Backend listening on http://localhost:${port}`);
+  console.log(`Backend listening on http://${host}:${port}`);
 });
