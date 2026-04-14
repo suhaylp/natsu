@@ -121,6 +121,10 @@ function normalizeBookingKey(value: string): string {
   return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+function normalizeTripTitle(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 const localTripByBookingRef = new Map<string, { tripId: string; tripTitle: string }>(
   localTrips
     .flatMap((trip) =>
@@ -131,12 +135,24 @@ const localTripByBookingRef = new Map<string, { tripId: string; tripTitle: strin
     .filter(([bookingRef]) => Boolean(bookingRef))
 );
 
+const localTripByTitle = new Map<string, { tripId: string; tripTitle: string }>(
+  localTrips.map((trip) => [normalizeTripTitle(trip.title), { tripId: trip.id, tripTitle: trip.title }])
+);
+
 function inferTripFromBookingReference(bookingReference?: string): { tripId: string; tripTitle: string } | undefined {
   if (!bookingReference) {
     return undefined;
   }
 
   return localTripByBookingRef.get(normalizeBookingKey(bookingReference));
+}
+
+function inferTripFromTitle(tripTitle?: string): { tripId: string; tripTitle: string } | undefined {
+  if (!tripTitle) {
+    return undefined;
+  }
+
+  return localTripByTitle.get(normalizeTripTitle(tripTitle));
 }
 
 function normalizeNotionPropertyKey(propertyKey: string): string {
@@ -413,6 +429,38 @@ function parseBaggage(properties: Record<string, NotionProperty>): Baggage | und
   };
 }
 
+function createPlaceholderIso(fieldName: string): IsoParts {
+  return {
+    iso: `placeholder-${fieldName}`,
+    year: 9999,
+    month: 12,
+    day: 31,
+    hour: 0,
+    minute: 0,
+    dateLabel: 'TBD',
+    timeLabel: '00:00',
+    epochMs: Number.POSITIVE_INFINITY,
+  };
+}
+
+function parseIsoWithFallback(iso: string | undefined, fieldName: string, allowFallback: boolean): IsoParts {
+  if (!iso) {
+    if (allowFallback) {
+      return createPlaceholderIso(fieldName);
+    }
+    throw new NotionMappingError(`Missing required Notion property: ${fieldName}`);
+  }
+
+  try {
+    return parseIso(iso, fieldName);
+  } catch (error) {
+    if (!allowFallback) {
+      throw error;
+    }
+    return createPlaceholderIso(fieldName);
+  }
+}
+
 function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
   const properties = page.properties;
 
@@ -420,17 +468,22 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
     throw new NotionMappingError('Missing Notion page properties');
   }
 
-  const departureIso = getRequiredText(properties, 'departure_iso');
-  const arrivalIso = getRequiredText(properties, 'arrival_iso');
+  const statusText = getOptionalText(properties, 'status') ?? 'booked';
+  const status = normalizeBookingStatus(statusText);
+  const allowPartialFlight = status === 'not_booked';
+  const departureIso = allowPartialFlight ? getOptionalText(properties, 'departure_iso') : getRequiredText(properties, 'departure_iso');
+  const arrivalIso = allowPartialFlight ? getOptionalText(properties, 'arrival_iso') : getRequiredText(properties, 'arrival_iso');
 
-  const departure = parseIso(departureIso, 'departure_iso');
-  const arrival = parseIso(arrivalIso, 'arrival_iso');
+  const departure = parseIsoWithFallback(departureIso, 'departure_iso', allowPartialFlight);
+  const arrival = parseIsoWithFallback(arrivalIso, 'arrival_iso', allowPartialFlight);
 
   const bookingRefFromRow = getOptionalText(properties, 'booking_ref') ?? getOptionalText(properties, 'booking_id');
   const inferredTrip = inferTripFromBookingReference(bookingRefFromRow);
+  const tripTitleFromRow = getOptionalText(properties, 'trip_title');
+  const inferredTripByTitle = inferTripFromTitle(tripTitleFromRow);
   const tripIdFromRow = getOptionalText(properties, 'trip_id');
   const fallbackTripId = process.env.NOTION_DEFAULT_TRIP_ID?.trim();
-  const tripId = tripIdFromRow ?? inferredTrip?.tripId ?? fallbackTripId;
+  const tripId = tripIdFromRow ?? inferredTrip?.tripId ?? inferredTripByTitle?.tripId ?? fallbackTripId;
   if (!tripId) {
     const availableProperties = Object.keys(properties).join(', ');
     throw new NotionMappingError(
@@ -448,16 +501,26 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
   }
 
   const fallbackTripTitle = process.env.NOTION_DEFAULT_TRIP_TITLE?.trim();
-  const tripTitle = getOptionalText(properties, 'trip_title') ?? inferredTrip?.tripTitle ?? fallbackTripTitle ?? tripId;
+  const tripTitle = tripTitleFromRow ?? inferredTrip?.tripTitle ?? inferredTripByTitle?.tripTitle ?? fallbackTripTitle ?? tripId;
+  const flightNumber = allowPartialFlight ? getOptionalText(properties, 'flight_number') ?? 'TBD' : getRequiredText(properties, 'flight_number');
+  const fromCity = allowPartialFlight
+    ? getOptionalText(properties, 'from_city') ?? getOptionalText(properties, 'from_code') ?? 'TBD'
+    : getRequiredText(properties, 'from_city');
+  const fromCode = allowPartialFlight ? getOptionalText(properties, 'from_code') ?? 'TBD' : getRequiredText(properties, 'from_code');
+  const toCity = allowPartialFlight
+    ? getOptionalText(properties, 'to_city') ?? getOptionalText(properties, 'to_code') ?? 'TBD'
+    : getRequiredText(properties, 'to_city');
+  const toCode = allowPartialFlight ? getOptionalText(properties, 'to_code') ?? 'TBD' : getRequiredText(properties, 'to_code');
+  const fallbackBookingLabel = fromCity !== 'TBD' || toCity !== 'TBD' ? `${fromCity} → ${toCity}` : 'Flight plan';
   const bookingId =
     getOptionalText(properties, 'booking_id') ??
     getOptionalText(properties, 'booking_ref') ??
-    `${tripId}-${getRequiredText(properties, 'flight_number')}-${departure.iso}`;
+    page.id ??
+    `${tripId}-${flightNumber}-${departure.iso}`;
   const bookingLabel =
     getOptionalText(properties, 'booking_label') ??
-    `${getRequiredText(properties, 'from_city')} → ${getRequiredText(properties, 'to_city')}`;
+    fallbackBookingLabel;
   const legIndex = getOptionalNumber(properties, 'leg_index') ?? 1;
-  const statusText = getOptionalText(properties, 'status') ?? 'booked';
   const durationText = getOptionalText(properties, 'duration');
   const durationNumber = getOptionalNumber(properties, 'duration');
   const normalizedDuration =
@@ -483,7 +546,7 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
     tripDateRange: getOptionalText(properties, 'trip_date_range'),
     bookingId,
     bookingLabel,
-    status: normalizeBookingStatus(statusText),
+    status,
     airline: getOptionalText(properties, 'airline'),
     bookingRef: getOptionalText(properties, 'booking_ref') ?? getOptionalText(properties, 'booking_id'),
     carryOn: getOptionalText(properties, 'carry_on'),
@@ -491,11 +554,11 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
     seats: parseSeats(properties),
     notes: notes || undefined,
     legIndex,
-    flightNumber: getRequiredText(properties, 'flight_number'),
-    fromCity: getRequiredText(properties, 'from_city'),
-    fromCode: getRequiredText(properties, 'from_code'),
-    toCity: getRequiredText(properties, 'to_city'),
-    toCode: getRequiredText(properties, 'to_code'),
+    flightNumber,
+    fromCity,
+    fromCode,
+    toCity,
+    toCode,
     departure,
     arrival,
     duration: normalizedDuration,

@@ -379,7 +379,7 @@ describe('mapNotionFlightPagesToTrips', () => {
     expect(trips[0].title).toBe('Asia Backpacking');
   });
 
-  it('infers trip from booking number when Trip relation is empty', () => {
+  it('throws when Trip relation is empty and booking number cannot be inferred', () => {
     const pages = [
       {
         properties: {
@@ -399,10 +399,7 @@ describe('mapNotionFlightPagesToTrips', () => {
       },
     ];
 
-    const trips = mapNotionFlightPagesToTrips(pages);
-    expect(trips).toHaveLength(1);
-    expect(trips[0].id).toBe('sea-japan');
-    expect(trips[0].title).toBe('Asia Backpacking');
+    expect(() => mapNotionFlightPagesToTrips(pages)).toThrow('No valid flight rows found in Notion');
   });
 
   it('maps Upcoming status as booked', () => {
@@ -420,7 +417,7 @@ describe('mapNotionFlightPagesToTrips', () => {
           'Departure Time': dateValue('2026-07-15T16:45:00-07:00'),
           'Arrival Time': dateValue('2026-07-16T19:00:00+09:00'),
           Status: formulaStringValue('Upcoming'),
-          Trip: relationValue(''),
+          Trip: relationValue('sea-japan'),
         },
       },
     ];
