@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { mapNotionFlightPagesToTrips, NotionMappingError } from '../src/lib/flightsSync/notionMapper';
+import { describe, expect, it, vi } from 'vitest';
+import { fetchNotionFlightPages, mapNotionFlightPagesToTrips, NotionMappingError } from '../src/lib/flightsSync/notionMapper';
 
 type NotionProperty = Record<string, unknown>;
 
@@ -28,6 +28,34 @@ function statusValue(value: string): NotionProperty {
   return {
     type: 'status',
     status: { name: value },
+  };
+}
+
+function selectValue(value: string): NotionProperty {
+  return {
+    type: 'select',
+    select: { name: value },
+  };
+}
+
+function dateValue(value: string): NotionProperty {
+  return {
+    type: 'date',
+    date: { start: value },
+  };
+}
+
+function formulaStringValue(value: string): NotionProperty {
+  return {
+    type: 'formula',
+    formula: { type: 'string', string: value },
+  };
+}
+
+function relationValue(id: string): NotionProperty {
+  return {
+    type: 'relation',
+    relation: [{ id }],
   };
 }
 
@@ -99,7 +127,7 @@ describe('mapNotionFlightPagesToTrips', () => {
   it('throws mapping errors for missing required properties', () => {
     const pages = [
       createPage({
-        booking_id: richText(''),
+        from_city: richText(''),
       }),
     ];
 
@@ -166,5 +194,84 @@ describe('mapNotionFlightPagesToTrips', () => {
     expect(trips).toHaveLength(1);
     expect(trips[0].bookings).toHaveLength(1);
     expect(trips[0].bookings[0].legs).toHaveLength(1);
+  });
+
+  it('maps flights using the provided Notion schema field names', () => {
+    const pages = [
+      {
+        properties: {
+          Name: titleText('YVR → BKK'),
+          Airline: selectValue('ANA'),
+          'Flight Number': richText('NH115'),
+          'Booking Number': richText('EQO9VF'),
+          'From Airport': richText('YVR'),
+          'From City': richText('Vancouver'),
+          'To Airport': richText('HND'),
+          'To City': richText('Tokyo'),
+          'Departure Time': dateValue('2026-07-15T16:45:00-07:00'),
+          'Arrival Time': dateValue('2026-07-16T19:00:00+09:00'),
+          Seats: richText('38D/38F'),
+          Status: formulaStringValue('booked'),
+          Trip: relationValue('sea-japan'),
+        },
+      },
+    ];
+
+    const trips = mapNotionFlightPagesToTrips(pages);
+
+    expect(trips).toHaveLength(1);
+    expect(trips[0].id).toBe('sea-japan');
+    expect(trips[0].bookings[0].id).toBe('EQO9VF');
+    expect(trips[0].bookings[0].label).toBe('YVR → BKK');
+    expect(trips[0].bookings[0].legs[0].fromCode).toBe('YVR');
+    expect(trips[0].bookings[0].legs[0].toCode).toBe('HND');
+  });
+
+  it('hydrates trip title from Trip relation pages during fetch', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/databases/')) {
+        return {
+          ok: true,
+          json: async () => ({
+            results: [
+              {
+                properties: {
+                  Trip: relationValue('trip-page-1'),
+                  Name: titleText('YVR → HND'),
+                  'Flight Number': richText('NH115'),
+                  'Booking Number': richText('EQO9VF'),
+                  Status: formulaStringValue('booked'),
+                  'From Airport': richText('YVR'),
+                  'From City': richText('Vancouver'),
+                  'To Airport': richText('HND'),
+                  'To City': richText('Tokyo'),
+                  'Departure Time': dateValue('2026-07-15T16:45:00-07:00'),
+                  'Arrival Time': dateValue('2026-07-16T19:00:00+09:00'),
+                },
+              },
+            ],
+            has_more: false,
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          properties: {
+            Name: titleText('Asia Backpacking'),
+          },
+        }),
+      };
+    });
+
+    const pages = await fetchNotionFlightPages({
+      notionToken: 'token',
+      databaseId: 'db-id',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const trips = mapNotionFlightPagesToTrips(pages);
+    expect(trips[0].title).toBe('Asia Backpacking');
   });
 });

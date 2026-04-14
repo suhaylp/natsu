@@ -15,6 +15,16 @@ type NotionProperty = {
   status?: { name?: string } | null;
   number?: number | null;
   date?: { start?: string | null } | null;
+  relation?: Array<{ id?: string }>;
+  formula?:
+    | {
+        type?: 'string' | 'number' | 'boolean' | 'date';
+        string?: string | null;
+        number?: number | null;
+        boolean?: boolean | null;
+        date?: { start?: string | null } | null;
+      }
+    | null;
   url?: string | null;
   email?: string | null;
   phone_number?: string | null;
@@ -22,6 +32,7 @@ type NotionProperty = {
 };
 
 type NotionPage = {
+  id?: string;
   properties?: Record<string, NotionProperty>;
 };
 
@@ -29,6 +40,10 @@ type NotionQueryResponse = {
   results?: NotionPage[];
   has_more?: boolean;
   next_cursor?: string | null;
+};
+
+type NotionPageResponse = {
+  properties?: Record<string, NotionProperty>;
 };
 
 type IsoParts = {
@@ -72,18 +87,23 @@ const notionVersion = '2022-06-28';
 const monthShortNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 const propertyAliases: Record<string, string[]> = {
   trip_id: ['trip', 'tripid'],
-  trip_title: ['trip_name', 'tripname', 'title'],
-  booking_id: ['booking', 'bookingid', 'pnr', 'reservation_id'],
-  booking_label: ['booking_name', 'route_label', 'label'],
+  trip_title: ['trip_name', 'tripname'],
+  booking_id: ['booking', 'bookingid', 'pnr', 'reservation_id', 'booking_number', 'bookingnumber'],
+  booking_label: ['booking_name', 'route_label', 'label', 'name'],
   status: ['booking_status'],
   flight_number: ['flight', 'flight_no', 'flightno'],
   from_city: ['origin_city', 'departure_city', 'from'],
-  from_code: ['origin_code', 'origin_iata', 'from_iata'],
+  from_code: ['origin_code', 'origin_iata', 'from_iata', 'from_airport'],
   to_city: ['destination_city', 'arrival_city', 'to'],
-  to_code: ['destination_code', 'destination_iata', 'to_iata'],
+  to_code: ['destination_code', 'destination_iata', 'to_iata', 'to_airport'],
   departure_iso: ['departure', 'departure_datetime', 'departure_time', 'departs_at', 'depart_at'],
   arrival_iso: ['arrival', 'arrival_datetime', 'arrival_time', 'arrives_at', 'arrive_at'],
   leg_index: ['leg', 'leg_order', 'segment', 'segment_index'],
+  booking_ref: ['booking_number', 'bookingnumber', 'pnr', 'reservation_id'],
+  duration: ['duration_minutes'],
+  seats: ['seat', 'seat_number'],
+  timezone_from: ['timezonefrom'],
+  timezone_to: ['timezoneto'],
 };
 
 function normalizeNotionPropertyKey(propertyKey: string): string {
@@ -195,6 +215,28 @@ function readPropertyText(property?: NotionProperty): string | undefined {
       return property.number !== null && property.number !== undefined ? String(property.number) : undefined;
     case 'date':
       return property.date?.start?.trim() || undefined;
+    case 'relation': {
+      const relationId = property.relation?.[0]?.id?.trim();
+      return relationId || undefined;
+    }
+    case 'formula': {
+      const formulaType = property.formula?.type;
+      if (formulaType === 'string') {
+        return property.formula?.string?.trim() || undefined;
+      }
+      if (formulaType === 'number') {
+        return property.formula?.number !== null && property.formula?.number !== undefined
+          ? String(property.formula.number)
+          : undefined;
+      }
+      if (formulaType === 'boolean') {
+        return property.formula?.boolean === true ? 'true' : property.formula?.boolean === false ? 'false' : undefined;
+      }
+      if (formulaType === 'date') {
+        return property.formula?.date?.start?.trim() || undefined;
+      }
+      return undefined;
+    }
     case 'url':
       return property.url?.trim() || undefined;
     case 'email':
@@ -253,15 +295,14 @@ function getOptionalText(properties: Record<string, NotionProperty>, key: string
   return readPropertyText(getPropertyByKey(properties, key));
 }
 
-function getRequiredNumber(properties: Record<string, NotionProperty>, key: string): number {
-  const rawValue = getRequiredText(properties, key);
-  const parsedNumber = Number(rawValue);
-
-  if (Number.isNaN(parsedNumber)) {
-    throw new NotionMappingError(`Invalid numeric value for property: ${key}`, `Value received: ${rawValue}`);
+function getOptionalNumber(properties: Record<string, NotionProperty>, key: string): number | undefined {
+  const value = getOptionalText(properties, key);
+  if (!value) {
+    return undefined;
   }
 
-  return parsedNumber;
+  const parsedNumber = Number(value);
+  return Number.isNaN(parsedNumber) ? undefined : parsedNumber;
 }
 
 function normalizeBookingStatus(rawStatus: string): BookingStatus {
@@ -291,7 +332,12 @@ function parseSeats(properties: Record<string, NotionProperty>): FlightLeg['seat
   const nataliaSeat = getOptionalText(properties, 'seat_natalia');
 
   if (!suhaylSeat && !nataliaSeat) {
-    return undefined;
+    const genericSeats = getOptionalText(properties, 'seats');
+    if (!genericSeats) {
+      return undefined;
+    }
+
+    return { suhayl: genericSeats };
   }
 
   return {
@@ -327,21 +373,50 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
   const departure = parseIso(departureIso, 'departure_iso');
   const arrival = parseIso(arrivalIso, 'arrival_iso');
 
+  const tripId = getRequiredText(properties, 'trip_id');
+  const tripTitle = getOptionalText(properties, 'trip_title') ?? tripId;
+  const bookingId =
+    getOptionalText(properties, 'booking_id') ??
+    getOptionalText(properties, 'booking_ref') ??
+    `${tripId}-${getRequiredText(properties, 'flight_number')}-${departure.iso}`;
+  const bookingLabel =
+    getOptionalText(properties, 'booking_label') ??
+    `${getRequiredText(properties, 'from_city')} → ${getRequiredText(properties, 'to_city')}`;
+  const legIndex = getOptionalNumber(properties, 'leg_index') ?? 1;
+  const statusText = getOptionalText(properties, 'status') ?? 'booked';
+  const durationText = getOptionalText(properties, 'duration');
+  const durationNumber = getOptionalNumber(properties, 'duration');
+  const normalizedDuration =
+    durationText && durationText.includes('h')
+      ? durationText
+      : durationNumber !== undefined
+        ? formatDuration(durationNumber * 60000)
+        : durationText;
+  const timezoneFrom = getOptionalText(properties, 'timezone_from');
+  const timezoneTo = getOptionalText(properties, 'timezone_to');
+  const notes = [
+    getOptionalText(properties, 'notes'),
+    timezoneFrom ? `Timezone from: ${timezoneFrom}` : null,
+    timezoneTo ? `Timezone to: ${timezoneTo}` : null,
+  ]
+    .filter(Boolean)
+    .join(' | ');
+
   return {
-    tripId: getRequiredText(properties, 'trip_id'),
-    tripTitle: getRequiredText(properties, 'trip_title'),
+    tripId,
+    tripTitle,
     tripEmoji: getOptionalText(properties, 'trip_emoji'),
     tripDateRange: getOptionalText(properties, 'trip_date_range'),
-    bookingId: getRequiredText(properties, 'booking_id'),
-    bookingLabel: getRequiredText(properties, 'booking_label'),
-    status: normalizeBookingStatus(getRequiredText(properties, 'status')),
+    bookingId,
+    bookingLabel,
+    status: normalizeBookingStatus(statusText),
     airline: getOptionalText(properties, 'airline'),
-    bookingRef: getOptionalText(properties, 'booking_ref'),
+    bookingRef: getOptionalText(properties, 'booking_ref') ?? getOptionalText(properties, 'booking_id'),
     carryOn: getOptionalText(properties, 'carry_on'),
     checkIn: getOptionalText(properties, 'check_in'),
     seats: parseSeats(properties),
-    notes: getOptionalText(properties, 'notes'),
-    legIndex: getRequiredNumber(properties, 'leg_index'),
+    notes: notes || undefined,
+    legIndex,
     flightNumber: getRequiredText(properties, 'flight_number'),
     fromCity: getRequiredText(properties, 'from_city'),
     fromCode: getRequiredText(properties, 'from_code'),
@@ -349,7 +424,7 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
     toCode: getRequiredText(properties, 'to_code'),
     departure,
     arrival,
-    duration: getOptionalText(properties, 'duration'),
+    duration: normalizedDuration,
   };
 }
 
@@ -473,7 +548,12 @@ function buildTripsFromRows(rows: FlatFlightRow[]): Trip[] {
   for (const [tripId, tripEntry] of tripMap.entries()) {
     const bookings: Booking[] = Array.from(tripEntry.bookingMap.entries())
       .map(([bookingId, booking]) => {
-        const sortedLegs = [...booking.legs].sort((a, b) => a.legIndex - b.legIndex);
+        const sortedLegs = [...booking.legs].sort((a, b) => {
+          if (a.legIndex !== b.legIndex) {
+            return a.legIndex - b.legIndex;
+          }
+          return a.departureEpoch - b.departureEpoch;
+        });
         return {
           id: bookingId,
           type: 'flight',
@@ -502,6 +582,113 @@ function buildTripsFromRows(rows: FlatFlightRow[]): Trip[] {
   }
 
   return trips.sort((a, b) => a.title.localeCompare(b.title));
+}
+
+function getTripRelationId(properties: Record<string, NotionProperty>): string | undefined {
+  const tripProperty = getPropertyByKey(properties, 'trip_id');
+  if (!tripProperty) {
+    return undefined;
+  }
+
+  if (tripProperty.type === 'relation') {
+    return tripProperty.relation?.[0]?.id;
+  }
+
+  return undefined;
+}
+
+function readFirstTitleProperty(properties: Record<string, NotionProperty>): string | undefined {
+  for (const property of Object.values(properties)) {
+    if (property.type !== 'title') {
+      continue;
+    }
+
+    const title = property.title?.map((item) => item.plain_text ?? '').join('').trim();
+    if (title) {
+      return title;
+    }
+  }
+
+  return undefined;
+}
+
+async function fetchRelatedTripTitles(params: {
+  notionToken: string;
+  pages: NotionPage[];
+  fetchImpl: typeof fetch;
+}): Promise<Map<string, string>> {
+  const { notionToken, pages, fetchImpl } = params;
+  const relationIds = new Set<string>();
+
+  for (const page of pages) {
+    if (!page.properties) {
+      continue;
+    }
+
+    const relationId = getTripRelationId(page.properties);
+    if (relationId) {
+      relationIds.add(relationId);
+    }
+  }
+
+  const titlesById = new Map<string, string>();
+  const ids = Array.from(relationIds);
+
+  for (const relationId of ids) {
+    const response = await fetchImpl(`https://api.notion.com/v1/pages/${relationId}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${notionToken}`,
+        'Notion-Version': notionVersion,
+      },
+    });
+
+    if (!response.ok) {
+      continue;
+    }
+
+    const payload = (await response.json()) as NotionPageResponse;
+    if (!payload.properties) {
+      continue;
+    }
+
+    const title = readFirstTitleProperty(payload.properties);
+    if (title) {
+      titlesById.set(relationId, title);
+    }
+  }
+
+  return titlesById;
+}
+
+function hydrateTripsFromRelations(pages: NotionPage[], titlesByRelationId: Map<string, string>) {
+  for (const page of pages) {
+    if (!page.properties) {
+      continue;
+    }
+
+    const relationId = getTripRelationId(page.properties);
+    if (!relationId) {
+      continue;
+    }
+
+    const hasTripId = Boolean(getOptionalText(page.properties, 'trip_id'));
+    if (!hasTripId) {
+      page.properties.trip_id = {
+        type: 'rich_text',
+        rich_text: [{ plain_text: relationId }],
+      };
+    }
+
+    const hasTripTitle = Boolean(getOptionalText(page.properties, 'trip_title'));
+    const relationTitle = titlesByRelationId.get(relationId);
+    if (!hasTripTitle && relationTitle) {
+      page.properties.trip_title = {
+        type: 'rich_text',
+        rich_text: [{ plain_text: relationTitle }],
+      };
+    }
+  }
 }
 
 export function mapNotionFlightPagesToTrips(pages: NotionPage[]): Trip[] {
@@ -578,6 +765,13 @@ export async function fetchNotionFlightPages(params: {
     pages.push(...payload.results);
     cursor = payload.has_more ? payload.next_cursor || undefined : undefined;
   } while (cursor);
+
+  const titlesByRelationId = await fetchRelatedTripTitles({
+    notionToken,
+    pages,
+    fetchImpl,
+  });
+  hydrateTripsFromRelations(pages, titlesByRelationId);
 
   return pages;
 }

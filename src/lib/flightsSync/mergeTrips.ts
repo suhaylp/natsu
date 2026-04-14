@@ -66,11 +66,33 @@ function getFlightBookings(trip: Trip): Booking[] {
   return trip.bookings.filter((booking) => booking.type === 'flight');
 }
 
+function normalizeTripTitle(title: string): string {
+  return title.trim().toLowerCase().replace(/\s+/g, ' ');
+}
+
 export function mergeTripsWithRemoteFlights(localTrips: Trip[], remoteTrips: Trip[]): Trip[] {
-  const remoteById = new Map(remoteTrips.map((trip) => [trip.id, trip]));
+  const localByNormalizedTitle = new Map(localTrips.map((trip) => [normalizeTripTitle(trip.title), trip]));
+  const remoteByLocalTripId = new Map<string, Trip>();
+  const remoteOnlyTrips: Trip[] = [];
+
+  for (const remoteTrip of remoteTrips) {
+    const localMatchById = localTrips.find((trip) => trip.id === remoteTrip.id);
+    if (localMatchById) {
+      remoteByLocalTripId.set(localMatchById.id, remoteTrip);
+      continue;
+    }
+
+    const localMatchByTitle = localByNormalizedTitle.get(normalizeTripTitle(remoteTrip.title));
+    if (localMatchByTitle) {
+      remoteByLocalTripId.set(localMatchByTitle.id, remoteTrip);
+      continue;
+    }
+
+    remoteOnlyTrips.push(remoteTrip);
+  }
 
   const mergedLocalTrips = localTrips.map((localTrip) => {
-    const remoteTrip = remoteById.get(localTrip.id);
+    const remoteTrip = remoteByLocalTripId.get(localTrip.id);
 
     if (!remoteTrip) {
       return localTrip;
@@ -89,9 +111,9 @@ export function mergeTripsWithRemoteFlights(localTrips: Trip[], remoteTrips: Tri
     };
   });
 
-  const localTripIds = new Set(localTrips.map((trip) => trip.id));
-  const remoteOnlyTrips = remoteTrips
-    .filter((trip) => !localTripIds.has(trip.id))
+  const normalizedLocalTitles = new Set(localTrips.map((trip) => normalizeTripTitle(trip.title)));
+  const mergedRemoteOnlyTrips = remoteOnlyTrips
+    .filter((trip) => !normalizedLocalTitles.has(normalizeTripTitle(trip.title)))
     .map((trip) => {
       const flightBookings = getFlightBookings(trip);
       const dateRange = trip.dateRange || 'TBD';
@@ -106,5 +128,5 @@ export function mergeTripsWithRemoteFlights(localTrips: Trip[], remoteTrips: Tri
     })
     .filter((trip) => trip.bookings.length > 0);
 
-  return [...mergedLocalTrips, ...remoteOnlyTrips];
+  return [...mergedLocalTrips, ...mergedRemoteOnlyTrips];
 }

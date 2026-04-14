@@ -119,4 +119,71 @@ describe('mergeTripsWithRemoteFlights', () => {
     expect(merged[0].bookings).toHaveLength(1);
     expect(merged[0].bookings[0].type).toBe('flight');
   });
+
+  it('matches remote trip by title when trip id differs', () => {
+    const localTrips: Trip[] = [
+      {
+        id: 'sea-japan',
+        title: 'Asia Backpacking',
+        emoji: '🎒🌏',
+        dateRange: 'Jul 15 – Aug 24, 2026',
+        bookings: [
+          {
+            id: 'old-flight',
+            type: 'flight',
+            status: 'booked',
+            label: 'Old',
+            legs: [
+              {
+                flightNumber: 'OLD1',
+                fromCity: 'Vancouver',
+                fromCode: 'YVR',
+                toCity: 'Tokyo',
+                toCode: 'HND',
+                departureTime: '10:00',
+                departureDate: 'Jul 15',
+                arrivalTime: '12:00',
+                arrivalDate: 'Jul 16',
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const remoteTrips: Trip[] = [
+      {
+        id: 'notion-page-id-123',
+        title: 'Asia Backpacking',
+        emoji: '✈️',
+        dateRange: 'Jul 15 – Aug 24, 2026',
+        bookings: [
+          {
+            id: 'new-flight',
+            type: 'flight',
+            status: 'booked',
+            label: 'New',
+            legs: [
+              {
+                flightNumber: 'NH115',
+                fromCity: 'Vancouver',
+                fromCode: 'YVR',
+                toCity: 'Tokyo',
+                toCode: 'HND',
+                departureTime: '16:45',
+                departureDate: 'Jul 15',
+                arrivalTime: '19:00',
+                arrivalDate: 'Jul 16',
+              },
+            ],
+          },
+        ],
+      },
+    ];
+
+    const merged = mergeTripsWithRemoteFlights(localTrips, remoteTrips);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe('sea-japan');
+    expect(merged[0].bookings.map((booking) => booking.id)).toEqual(['new-flight']);
+  });
 });
