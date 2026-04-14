@@ -125,6 +125,64 @@ function normalizeTripTitle(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+const monthToNumber = new Map<string, number>(
+  monthShortNames.map((monthLabel, index) => [monthLabel.toLowerCase(), index + 1])
+);
+
+type TripDateRangeWindow = {
+  tripId: string;
+  tripTitle: string;
+  startEpochMs: number;
+  endEpochMs: number;
+};
+
+function parseTripDateRangeWindow(trip: Trip): TripDateRangeWindow | undefined {
+  const rangeText = trip.dateRange.trim();
+
+  const sameMonthMatch = rangeText.match(/^([A-Za-z]{3})\s+(\d{1,2})\s*[–-]\s*(\d{1,2}),\s*(\d{4})$/);
+  if (sameMonthMatch) {
+    const [, monthToken, startDayToken, endDayToken, yearToken] = sameMonthMatch;
+    const month = monthToNumber.get(monthToken.toLowerCase());
+    const startDay = Number(startDayToken);
+    const endDay = Number(endDayToken);
+    const year = Number(yearToken);
+
+    if (!month || Number.isNaN(startDay) || Number.isNaN(endDay) || Number.isNaN(year)) {
+      return undefined;
+    }
+
+    return {
+      tripId: trip.id,
+      tripTitle: trip.title,
+      startEpochMs: Date.UTC(year, month - 1, startDay, 0, 0, 0, 0),
+      endEpochMs: Date.UTC(year, month - 1, endDay, 23, 59, 59, 999),
+    };
+  }
+
+  const crossMonthMatch = rangeText.match(/^([A-Za-z]{3})\s+(\d{1,2})\s*[–-]\s*([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{4})$/);
+  if (!crossMonthMatch) {
+    return undefined;
+  }
+
+  const [, startMonthToken, startDayToken, endMonthToken, endDayToken, yearToken] = crossMonthMatch;
+  const startMonth = monthToNumber.get(startMonthToken.toLowerCase());
+  const endMonth = monthToNumber.get(endMonthToken.toLowerCase());
+  const startDay = Number(startDayToken);
+  const endDay = Number(endDayToken);
+  const year = Number(yearToken);
+
+  if (!startMonth || !endMonth || Number.isNaN(startDay) || Number.isNaN(endDay) || Number.isNaN(year)) {
+    return undefined;
+  }
+
+  return {
+    tripId: trip.id,
+    tripTitle: trip.title,
+    startEpochMs: Date.UTC(year, startMonth - 1, startDay, 0, 0, 0, 0),
+    endEpochMs: Date.UTC(year, endMonth - 1, endDay, 23, 59, 59, 999),
+  };
+}
+
 const localTripByBookingRef = new Map<string, { tripId: string; tripTitle: string }>(
   localTrips
     .flatMap((trip) =>
@@ -138,6 +196,10 @@ const localTripByBookingRef = new Map<string, { tripId: string; tripTitle: strin
 const localTripByTitle = new Map<string, { tripId: string; tripTitle: string }>(
   localTrips.map((trip) => [normalizeTripTitle(trip.title), { tripId: trip.id, tripTitle: trip.title }])
 );
+
+const localTripDateWindows = localTrips
+  .map((trip) => parseTripDateRangeWindow(trip))
+  .filter((range): range is TripDateRangeWindow => Boolean(range));
 
 function inferTripFromBookingReference(bookingReference?: string): { tripId: string; tripTitle: string } | undefined {
   if (!bookingReference) {
@@ -153,6 +215,26 @@ function inferTripFromTitle(tripTitle?: string): { tripId: string; tripTitle: st
   }
 
   return localTripByTitle.get(normalizeTripTitle(tripTitle));
+}
+
+function inferTripFromDepartureDate(departure: IsoParts): { tripId: string; tripTitle: string } | undefined {
+  if (!Number.isFinite(departure.epochMs)) {
+    return undefined;
+  }
+
+  const departureUtc = Date.UTC(departure.year, departure.month - 1, departure.day, 12, 0, 0, 0);
+  const matchedTrip = localTripDateWindows.find(
+    (range) => departureUtc >= range.startEpochMs && departureUtc <= range.endEpochMs
+  );
+
+  if (!matchedTrip) {
+    return undefined;
+  }
+
+  return {
+    tripId: matchedTrip.tripId,
+    tripTitle: matchedTrip.tripTitle,
+  };
 }
 
 function normalizeNotionPropertyKey(propertyKey: string): string {
@@ -488,9 +570,10 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
   const inferredTrip = inferTripFromBookingReference(bookingRefFromRow);
   const tripTitleFromRow = getOptionalText(properties, 'trip_title');
   const inferredTripByTitle = inferTripFromTitle(tripTitleFromRow);
+  const inferredTripByDate = inferTripFromDepartureDate(departure);
   const tripIdFromRow = getOptionalText(properties, 'trip_id');
   const fallbackTripId = process.env.NOTION_DEFAULT_TRIP_ID?.trim();
-  const tripId = tripIdFromRow ?? inferredTrip?.tripId ?? inferredTripByTitle?.tripId ?? fallbackTripId;
+  const tripId = tripIdFromRow ?? inferredTrip?.tripId ?? inferredTripByTitle?.tripId ?? inferredTripByDate?.tripId ?? fallbackTripId;
   if (!tripId) {
     const availableProperties = Object.keys(properties).join(', ');
     throw new NotionMappingError(
@@ -508,7 +591,8 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
   }
 
   const fallbackTripTitle = process.env.NOTION_DEFAULT_TRIP_TITLE?.trim();
-  const tripTitle = tripTitleFromRow ?? inferredTrip?.tripTitle ?? inferredTripByTitle?.tripTitle ?? fallbackTripTitle ?? tripId;
+  const tripTitle =
+    tripTitleFromRow ?? inferredTrip?.tripTitle ?? inferredTripByTitle?.tripTitle ?? inferredTripByDate?.tripTitle ?? fallbackTripTitle ?? tripId;
   const flightNumber = allowPartialFlight ? getOptionalText(properties, 'flight_number') ?? 'TBD' : getRequiredText(properties, 'flight_number');
   const fromCity = allowPartialFlight
     ? getOptionalText(properties, 'from_city') ?? getOptionalText(properties, 'from_code') ?? 'TBD'
