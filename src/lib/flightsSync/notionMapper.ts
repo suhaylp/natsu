@@ -1,3 +1,4 @@
+import { trips as localTrips } from '../../data/trips';
 import type { Booking, BookingStatus, FlightLeg, Trip } from '../../data/trips';
 
 type Baggage = {
@@ -115,6 +116,28 @@ const propertyAliases: Record<string, string[]> = {
   timezone_from: ['timezonefrom'],
   timezone_to: ['timezoneto'],
 };
+
+function normalizeBookingKey(value: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+const localTripByBookingRef = new Map<string, { tripId: string; tripTitle: string }>(
+  localTrips
+    .flatMap((trip) =>
+      trip.bookings
+        .filter((booking) => booking.type === 'flight' && booking.bookingRef)
+        .map((booking) => [normalizeBookingKey(booking.bookingRef as string), { tripId: trip.id, tripTitle: trip.title }] as const)
+    )
+    .filter(([bookingRef]) => Boolean(bookingRef))
+);
+
+function inferTripFromBookingReference(bookingReference?: string): { tripId: string; tripTitle: string } | undefined {
+  if (!bookingReference) {
+    return undefined;
+  }
+
+  return localTripByBookingRef.get(normalizeBookingKey(bookingReference));
+}
 
 function normalizeNotionPropertyKey(propertyKey: string): string {
   return propertyKey.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -318,11 +341,24 @@ function getOptionalNumber(properties: Record<string, NotionProperty>, key: stri
 function normalizeBookingStatus(rawStatus: string): BookingStatus {
   const normalized = rawStatus.trim().toLowerCase().replace(/[\s-]+/g, '_');
 
-  if (normalized === 'booked' || normalized === 'confirmed' || normalized === 'ticketed') {
+  if (
+    normalized === 'booked' ||
+    normalized === 'confirmed' ||
+    normalized === 'ticketed' ||
+    normalized.includes('booked') ||
+    normalized.includes('confirm')
+  ) {
     return 'booked';
   }
 
-  if (normalized === 'not_booked' || normalized === 'planned' || normalized === 'to_book') {
+  if (
+    normalized === 'not_booked' ||
+    normalized === 'planned' ||
+    normalized === 'to_book' ||
+    normalized.includes('not_booked') ||
+    normalized.includes('to_book') ||
+    normalized.includes('planned')
+  ) {
     return 'not_booked';
   }
 
@@ -383,9 +419,11 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
   const departure = parseIso(departureIso, 'departure_iso');
   const arrival = parseIso(arrivalIso, 'arrival_iso');
 
+  const bookingRefFromRow = getOptionalText(properties, 'booking_ref') ?? getOptionalText(properties, 'booking_id');
+  const inferredTrip = inferTripFromBookingReference(bookingRefFromRow);
   const tripIdFromRow = getOptionalText(properties, 'trip_id');
   const fallbackTripId = process.env.NOTION_DEFAULT_TRIP_ID?.trim();
-  const tripId = tripIdFromRow ?? fallbackTripId;
+  const tripId = tripIdFromRow ?? inferredTrip?.tripId ?? fallbackTripId;
   if (!tripId) {
     const availableProperties = Object.keys(properties).join(', ');
     throw new NotionMappingError(
@@ -393,6 +431,9 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
       [
         availableProperties ? `Available properties: ${availableProperties}` : null,
         'Trip relation appears empty. Ensure Trip is selected on each row and the integration has access to the related Trip database.',
+        bookingRefFromRow
+          ? `Booking reference seen: ${bookingRefFromRow} (no local trip match)`
+          : 'No booking reference available for trip inference',
       ]
         .filter(Boolean)
         .join(' | ')
@@ -400,7 +441,7 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
   }
 
   const fallbackTripTitle = process.env.NOTION_DEFAULT_TRIP_TITLE?.trim();
-  const tripTitle = getOptionalText(properties, 'trip_title') ?? fallbackTripTitle ?? tripId;
+  const tripTitle = getOptionalText(properties, 'trip_title') ?? inferredTrip?.tripTitle ?? fallbackTripTitle ?? tripId;
   const bookingId =
     getOptionalText(properties, 'booking_id') ??
     getOptionalText(properties, 'booking_ref') ??
