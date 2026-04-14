@@ -9,6 +9,10 @@ app.get('/health', (_req, res) => {
   res.status(200).json({ ok: true });
 });
 
+app.get('/', (_req, res) => {
+  res.status(200).json({ ok: true, service: 'natsu-backend' });
+});
+
 app.get('/api/flights', async (req, res) => {
   await flightsHandler(req, res);
 });
