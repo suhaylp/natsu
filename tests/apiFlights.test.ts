@@ -93,35 +93,43 @@ describe('GET /api/flights', () => {
     const response = createMockResponse();
 
     vi.spyOn(notionMapper, 'fetchNotionFlightPages').mockResolvedValue([{ properties: {} }]);
-    vi.spyOn(notionMapper, 'mapNotionFlightPagesToTrips').mockReturnValue([
-      {
-        id: 'trip-1',
-        title: 'Trip 1',
-        emoji: '✈️',
-        dateRange: 'Sep 1 – 2, 2026',
-        bookings: [
-          {
-            id: 'booking-1',
-            type: 'flight',
-            status: 'booked',
-            label: 'Leg 1',
-            legs: [
-              {
-                flightNumber: 'AC1',
-                fromCity: 'Vancouver',
-                fromCode: 'YVR',
-                toCity: 'Seattle',
-                toCode: 'SEA',
-                departureTime: '10:00',
-                departureDate: 'Sep 1',
-                arrivalTime: '11:00',
-                arrivalDate: 'Sep 1',
-              },
-            ],
-          },
-        ],
+    vi.spyOn(notionMapper, 'mapNotionFlightPagesToTripsWithDiagnostics').mockReturnValue({
+      trips: [
+        {
+          id: 'trip-1',
+          title: 'Trip 1',
+          emoji: '✈️',
+          dateRange: 'Sep 1 – 2, 2026',
+          bookings: [
+            {
+              id: 'booking-1',
+              type: 'flight',
+              status: 'booked',
+              label: 'Leg 1',
+              legs: [
+                {
+                  flightNumber: 'AC1',
+                  fromCity: 'Vancouver',
+                  fromCode: 'YVR',
+                  toCity: 'Seattle',
+                  toCode: 'SEA',
+                  departureTime: '10:00',
+                  departureDate: 'Sep 1',
+                  arrivalTime: '11:00',
+                  arrivalDate: 'Sep 1',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      diagnostics: {
+        totalRows: 1,
+        mappedRows: 1,
+        skippedRows: 0,
+        rowErrors: [],
       },
-    ]);
+    });
 
     await flightsHandler(
       {
@@ -140,6 +148,57 @@ describe('GET /api/flights', () => {
           id: 'trip-1',
         },
       ],
+    });
+  });
+
+  it('includes diagnostics when debug=1 is requested', async () => {
+    const response = createMockResponse();
+
+    vi.spyOn(notionMapper, 'fetchNotionFlightPages').mockResolvedValue([{ properties: {} }, { properties: {} }]);
+    vi.spyOn(notionMapper, 'mapNotionFlightPagesToTripsWithDiagnostics').mockReturnValue({
+      trips: [
+        {
+          id: 'trip-1',
+          title: 'Trip 1',
+          emoji: '✈️',
+          dateRange: 'Sep 1 – 2, 2026',
+          bookings: [],
+        },
+      ],
+      diagnostics: {
+        totalRows: 2,
+        mappedRows: 1,
+        skippedRows: 1,
+        rowErrors: ['Row 2: Missing required Notion property: trip_id'],
+      },
+    });
+
+    await flightsHandler(
+      {
+        method: 'GET',
+        headers: {
+          'x-api-key': 'shared-key',
+        },
+        query: {
+          debug: '1',
+        },
+      },
+      response.response
+    );
+
+    expect(response.getStatusCode()).toBe(200);
+    expect(response.getPayload()).toMatchObject({
+      trips: [
+        {
+          id: 'trip-1',
+        },
+      ],
+      debug: {
+        pagesFetched: 2,
+        mappedRows: 1,
+        skippedRows: 1,
+        skippedRowErrors: ['Row 2: Missing required Notion property: trip_id'],
+      },
     });
   });
 });

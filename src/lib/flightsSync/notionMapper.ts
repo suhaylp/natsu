@@ -181,6 +181,13 @@ export class NotionMappingError extends Error {
   }
 }
 
+export type MappingDiagnostics = {
+  totalRows: number;
+  mappedRows: number;
+  skippedRows: number;
+  rowErrors: string[];
+};
+
 function parseIso(iso: string, fieldName: string): IsoParts {
   const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
   const epochMs = Date.parse(iso);
@@ -908,7 +915,10 @@ async function hydrateEmptyTripRelations(params: {
   }
 }
 
-export function mapNotionFlightPagesToTrips(pages: NotionPage[]): Trip[] {
+export function mapNotionFlightPagesToTripsWithDiagnostics(pages: NotionPage[]): {
+  trips: Trip[];
+  diagnostics: MappingDiagnostics;
+} {
   const rows: FlatFlightRow[] = [];
   const rowErrors: string[] = [];
 
@@ -942,7 +952,19 @@ export function mapNotionFlightPagesToTrips(pages: NotionPage[]): Trip[] {
     console.warn(`Skipped ${rowErrors.length} invalid Notion flight row(s).`, rowErrors.slice(0, 5));
   }
 
-  return buildTripsFromRows(rows);
+  return {
+    trips: buildTripsFromRows(rows),
+    diagnostics: {
+      totalRows: pages.length,
+      mappedRows: rows.length,
+      skippedRows: rowErrors.length,
+      rowErrors,
+    },
+  };
+}
+
+export function mapNotionFlightPagesToTrips(pages: NotionPage[]): Trip[] {
+  return mapNotionFlightPagesToTripsWithDiagnostics(pages).trips;
 }
 
 export async function fetchNotionFlightPages(params: {

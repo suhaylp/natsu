@@ -1,7 +1,7 @@
 import type { FlightsApiErrorCode, FlightsApiErrorResponse, FlightsApiResponse } from '../src/lib/flightsSync/contracts';
 import {
   fetchNotionFlightPages,
-  mapNotionFlightPagesToTrips,
+  mapNotionFlightPagesToTripsWithDiagnostics,
   NotionFetchError,
   NotionMappingError,
 } from '../src/lib/flightsSync/notionMapper';
@@ -9,11 +9,21 @@ import {
 type ApiRequest = {
   method?: string;
   headers?: Record<string, string | string[] | undefined>;
+  query?: Record<string, string | string[] | undefined>;
+};
+
+type FlightsApiDebugResponse = FlightsApiResponse & {
+  debug: {
+    pagesFetched: number;
+    mappedRows: number;
+    skippedRows: number;
+    skippedRowErrors: string[];
+  };
 };
 
 type ApiResponse = {
   status: (statusCode: number) => ApiResponse;
-  json: (payload: FlightsApiResponse | FlightsApiErrorResponse) => void;
+  json: (payload: FlightsApiResponse | FlightsApiDebugResponse | FlightsApiErrorResponse) => void;
   setHeader?: (headerName: string, value: string) => void;
 };
 
@@ -48,6 +58,29 @@ function getApiKeyFromRequest(req: ApiRequest): string | undefined {
   }
 
   return undefined;
+}
+
+function getQueryValue(query: ApiRequest['query'], key: string): string | undefined {
+  if (!query) {
+    return undefined;
+  }
+
+  const rawValue = query[key] ?? query[key.toLowerCase()];
+  if (Array.isArray(rawValue)) {
+    return rawValue[0];
+  }
+
+  return rawValue;
+}
+
+function isDebugRequested(req: ApiRequest): boolean {
+  const debugValue = getQueryValue(req.query, 'debug');
+  if (!debugValue) {
+    return false;
+  }
+
+  const normalized = debugValue.trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'yes';
 }
 
 function sendError(res: ApiResponse, statusCode: number, code: FlightsApiErrorCode, message: string, details?: string) {
@@ -92,17 +125,34 @@ export async function flightsHandler(req: ApiRequest, res: ApiResponse): Promise
   }
 
   try {
+    const includeDebug = isDebugRequested(req);
     const pages = await fetchNotionFlightPages({
       notionToken,
       databaseId: notionFlightsDbId,
     });
 
-    const trips = mapNotionFlightPagesToTrips(pages);
+    const { trips, diagnostics } = mapNotionFlightPagesToTripsWithDiagnostics(pages);
 
-    res.status(200).json({
+    const basePayload: FlightsApiResponse = {
       generatedAt: new Date().toISOString(),
       trips,
-    });
+    };
+
+    if (includeDebug) {
+      const debugPayload: FlightsApiDebugResponse = {
+        ...basePayload,
+        debug: {
+          pagesFetched: pages.length,
+          mappedRows: diagnostics.mappedRows,
+          skippedRows: diagnostics.skippedRows,
+          skippedRowErrors: diagnostics.rowErrors.slice(0, 50),
+        },
+      };
+      res.status(200).json(debugPayload);
+      return;
+    }
+
+    res.status(200).json(basePayload);
   } catch (error) {
     if (error instanceof NotionFetchError) {
       sendError(res, 502, 'notion_error', error.message, error.details);
