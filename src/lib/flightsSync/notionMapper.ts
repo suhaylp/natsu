@@ -8,6 +8,7 @@ type Baggage = {
 type NotionRichText = { plain_text?: string };
 
 type NotionProperty = {
+  id?: string;
   type?: string;
   title?: NotionRichText[];
   rich_text?: NotionRichText[];
@@ -44,6 +45,15 @@ type NotionQueryResponse = {
 
 type NotionPageResponse = {
   properties?: Record<string, NotionProperty>;
+};
+
+type NotionPropertyItemResponse = {
+  results?: Array<{
+    type?: string;
+    relation?: { id?: string };
+  }>;
+  has_more?: boolean;
+  next_cursor?: string | null;
 };
 
 type IsoParts = {
@@ -382,7 +392,7 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
       'Missing required Notion property: trip_id',
       [
         availableProperties ? `Available properties: ${availableProperties}` : null,
-        'Trip relation appears empty. Set Trip on each row, or set NOTION_DEFAULT_TRIP_ID.',
+        'Trip relation appears empty. Ensure Trip is selected on each row and the integration has access to the related Trip database.',
       ]
         .filter(Boolean)
         .join(' | ')
@@ -707,6 +717,86 @@ function hydrateTripsFromRelations(pages: NotionPage[], titlesByRelationId: Map<
   }
 }
 
+async function fetchRelationIdsForProperty(params: {
+  notionToken: string;
+  pageId: string;
+  propertyId: string;
+  fetchImpl: typeof fetch;
+}): Promise<string[]> {
+  const { notionToken, pageId, propertyId, fetchImpl } = params;
+  const relationIds: string[] = [];
+  let cursor: string | undefined;
+
+  do {
+    const query = cursor ? `?start_cursor=${encodeURIComponent(cursor)}` : '';
+    const response = await fetchImpl(
+      `https://api.notion.com/v1/pages/${encodeURIComponent(pageId)}/properties/${encodeURIComponent(propertyId)}${query}`,
+      {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${notionToken}`,
+          'Notion-Version': notionVersion,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      break;
+    }
+
+    const payload = (await response.json()) as NotionPropertyItemResponse;
+    const ids = (payload.results ?? [])
+      .filter((item) => item.type === 'relation')
+      .map((item) => item.relation?.id)
+      .filter((id): id is string => Boolean(id));
+
+    relationIds.push(...ids);
+    cursor = payload.has_more ? payload.next_cursor || undefined : undefined;
+  } while (cursor);
+
+  return relationIds;
+}
+
+async function hydrateEmptyTripRelations(params: {
+  notionToken: string;
+  pages: NotionPage[];
+  fetchImpl: typeof fetch;
+}) {
+  const { notionToken, pages, fetchImpl } = params;
+
+  for (const page of pages) {
+    if (!page.id || !page.properties) {
+      continue;
+    }
+
+    const tripProperty = getPropertyByKey(page.properties, 'trip_id');
+    if (!tripProperty || tripProperty.type !== 'relation') {
+      continue;
+    }
+
+    if ((tripProperty.relation ?? []).length > 0) {
+      continue;
+    }
+
+    if (!tripProperty.id) {
+      continue;
+    }
+
+    const relationIds = await fetchRelationIdsForProperty({
+      notionToken,
+      pageId: page.id,
+      propertyId: tripProperty.id,
+      fetchImpl,
+    });
+
+    if (relationIds.length === 0) {
+      continue;
+    }
+
+    tripProperty.relation = relationIds.map((id) => ({ id }));
+  }
+}
+
 export function mapNotionFlightPagesToTrips(pages: NotionPage[]): Trip[] {
   const rows: FlatFlightRow[] = [];
   const rowErrors: string[] = [];
@@ -781,6 +871,12 @@ export async function fetchNotionFlightPages(params: {
     pages.push(...payload.results);
     cursor = payload.has_more ? payload.next_cursor || undefined : undefined;
   } while (cursor);
+
+  await hydrateEmptyTripRelations({
+    notionToken,
+    pages,
+    fetchImpl,
+  });
 
   const titlesByRelationId = await fetchRelatedTripTitles({
     notionToken,

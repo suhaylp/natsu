@@ -318,4 +318,64 @@ describe('mapNotionFlightPagesToTrips', () => {
     const trips = mapNotionFlightPagesToTrips(pages);
     expect(trips[0].title).toBe('Asia Backpacking');
   });
+
+  it('hydrates empty Trip relation via page property endpoint', async () => {
+    const fetchImpl = vi.fn(async (url: string) => {
+      if (url.includes('/databases/')) {
+        return {
+          ok: true,
+          json: async () => ({
+            results: [
+              {
+                id: 'flight-page-1',
+                properties: {
+                  Trip: { id: 'tripProp1', type: 'relation', relation: [] },
+                  Name: titleText('YVR → HND'),
+                  'Flight Number': richText('NH115'),
+                  'Booking Number': richText('EQO9VF'),
+                  Status: formulaStringValue('booked'),
+                  'From Airport': richText('YVR'),
+                  'From City': richText('Vancouver'),
+                  'To Airport': richText('HND'),
+                  'To City': richText('Tokyo'),
+                  'Departure Time': dateValue('2026-07-15T16:45:00-07:00'),
+                  'Arrival Time': dateValue('2026-07-16T19:00:00+09:00'),
+                },
+              },
+            ],
+            has_more: false,
+          }),
+        };
+      }
+
+      if (url.includes('/pages/flight-page-1/properties/tripProp1')) {
+        return {
+          ok: true,
+          json: async () => ({
+            results: [{ type: 'relation', relation: { id: 'sea-japan' } }],
+            has_more: false,
+          }),
+        };
+      }
+
+      return {
+        ok: true,
+        json: async () => ({
+          properties: {
+            Name: titleText('Asia Backpacking'),
+          },
+        }),
+      };
+    });
+
+    const pages = await fetchNotionFlightPages({
+      notionToken: 'token',
+      databaseId: 'db-id',
+      fetchImpl: fetchImpl as unknown as typeof fetch,
+    });
+
+    const trips = mapNotionFlightPagesToTrips(pages);
+    expect(trips[0].id).toBe('sea-japan');
+    expect(trips[0].title).toBe('Asia Backpacking');
+  });
 });
