@@ -72,23 +72,55 @@ function InfoRow({ label, value, isLast = false }: InfoRowProps) {
 function getWhoIsFlyingData(
   booking: NonNullable<ReturnType<typeof getBooking>>
 ): { flyers: Array<{ id: PassengerId; seat?: string }>; noSeatsBooked: boolean } {
+  function splitCombinedSeats(value: string): { suhayl?: string; natalia?: string } {
+    const seatCodeMatches = value.match(/\b\d{1,2}[A-Z]\b/g);
+    if (seatCodeMatches && seatCodeMatches.length >= 2) {
+      return {
+        suhayl: seatCodeMatches[0],
+        natalia: seatCodeMatches[1],
+      };
+    }
+
+    const segments = value
+      .split(/\s*(?:\/|,|;|&|\+|\band\b)\s*/i)
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+
+    if (segments.length >= 2) {
+      return {
+        suhayl: segments[0],
+        natalia: segments[1],
+      };
+    }
+
+    return { suhayl: value.trim() };
+  }
+
+  const allPassengers = Object.keys(passengers) as PassengerId[];
   const seatInfo = booking.legs.find((leg) => leg.seats !== undefined)?.seats;
 
   if (!seatInfo) {
-    return { flyers: [], noSeatsBooked: false };
-  }
-
-  if (seatInfo === 'not_assigned') {
     return {
-      flyers: (Object.keys(passengers) as PassengerId[]).map((id) => ({ id })),
+      flyers: allPassengers.map((id) => ({ id })),
       noSeatsBooked: true,
     };
   }
 
+  if (seatInfo === 'not_assigned') {
+    return {
+      flyers: allPassengers.map((id) => ({ id })),
+      noSeatsBooked: true,
+    };
+  }
+
+  const normalizedSeatInfo =
+    seatInfo.suhayl && !seatInfo.natalia ? splitCombinedSeats(seatInfo.suhayl) : seatInfo;
+
   return {
-    flyers: (Object.keys(seatInfo) as PassengerId[])
-      .filter((id) => Boolean(seatInfo[id]))
-      .map((id) => ({ id, seat: seatInfo[id] })),
+    flyers: allPassengers.map((id) => ({
+      id,
+      ...(normalizedSeatInfo[id] ? { seat: normalizedSeatInfo[id] } : {}),
+    })),
     noSeatsBooked: false,
   };
 }

@@ -46,6 +46,7 @@ npm run backend:start
 
 - `NOTION_TOKEN`
 - `NOTION_FLIGHTS_DB_ID`
+- `NOTION_HOTELS_DB_ID` (optional if using the default hotels DB id in code)
 - `FLIGHTS_SYNC_API_KEY`
 - `PORT` (optional; Railway usually injects it automatically)
 

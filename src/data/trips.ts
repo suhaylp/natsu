@@ -1,6 +1,7 @@
 type BookingStatus = 'booked' | 'not_booked';
 type BookingType =
   | 'flight'
+  | 'hotel'
   | 'train'
   | 'bus'
   | 'event'
@@ -28,6 +29,20 @@ type Baggage = {
   checkIn: string;
 };
 
+type HotelStay = {
+  name: string;
+  city?: string;
+  address?: string;
+  checkInDate?: string;
+  checkInTime?: string;
+  checkOutDate?: string;
+  checkOutTime?: string;
+  confirmationNumber?: string;
+  roomType?: string;
+  provider?: string;
+  nights?: string;
+};
+
 type Booking = {
   id: string;
   type: BookingType;
@@ -41,6 +56,7 @@ type Booking = {
   activityDate?: string;
   activityTime?: string;
   activityLocation?: string;
+  hotelStay?: HotelStay;
 };
 
 type Trip = {
@@ -51,7 +67,7 @@ type Trip = {
   bookings: Booking[];
 };
 
-export type { Booking, BookingStatus, BookingType, FlightLeg, Trip };
+export type { Booking, BookingStatus, BookingType, FlightLeg, HotelStay, Trip };
 
 export const trips: Trip[] = [
   {

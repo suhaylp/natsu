@@ -186,4 +186,62 @@ describe('mergeTripsWithRemoteFlights', () => {
     expect(merged[0].id).toBe('sea-japan');
     expect(merged[0].bookings.map((booking) => booking.id)).toEqual(['new-flight']);
   });
+
+  it('replaces local hotel bookings with synced hotel bookings', () => {
+    const localTrips: Trip[] = [
+      {
+        id: 'trip-1',
+        title: 'Local Trip',
+        emoji: '🌍',
+        dateRange: 'Sep 1 – 5, 2026',
+        bookings: [
+          {
+            id: 'hotel-local',
+            type: 'hotel',
+            status: 'booked',
+            label: 'Old Hotel',
+            legs: [],
+            activityDate: 'Sep 1',
+            hotelStay: {
+              name: 'Old Hotel',
+            },
+          },
+          {
+            id: 'event-local',
+            type: 'event',
+            status: 'booked',
+            label: 'Dinner',
+            legs: [],
+            activityDate: 'Sep 2',
+            activityTime: '19:00',
+          },
+        ],
+      },
+    ];
+
+    const remoteTrips: Trip[] = [
+      {
+        id: 'trip-1',
+        title: 'Local Trip',
+        emoji: '✈️',
+        dateRange: 'Sep 1 – 5, 2026',
+        bookings: [
+          {
+            id: 'hotel-remote',
+            type: 'hotel',
+            status: 'booked',
+            label: 'New Hotel',
+            legs: [],
+            activityDate: 'Sep 1',
+            hotelStay: {
+              name: 'New Hotel',
+            },
+          },
+        ],
+      },
+    ];
+
+    const merged = mergeTripsWithRemoteFlights(localTrips, remoteTrips);
+    expect(merged[0].bookings.map((booking) => booking.id)).toEqual(['hotel-remote', 'event-local']);
+  });
 });

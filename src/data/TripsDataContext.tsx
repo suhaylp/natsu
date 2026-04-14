@@ -40,7 +40,7 @@ function parseApiErrorMessage(payload: unknown): string | null {
 
 async function fetchRemoteFlights(): Promise<FlightsApiResponse> {
   if (!flightsApiUrl) {
-    throw new Error('Flight sync is not configured. Set EXPO_PUBLIC_FLIGHTS_API_URL.');
+    throw new Error('Trip sync is not configured. Set EXPO_PUBLIC_FLIGHTS_API_URL.');
   }
 
   const response = await fetch(flightsApiUrl, {
@@ -55,11 +55,11 @@ async function fetchRemoteFlights(): Promise<FlightsApiResponse> {
 
   if (!response.ok) {
     const apiError = parseApiErrorMessage(payload);
-    throw new Error(apiError ?? `Flight sync failed (${response.status}).`);
+    throw new Error(apiError ?? `Trip sync failed (${response.status}).`);
   }
 
   if (!isFlightsApiResponse(payload)) {
-    throw new Error('Flight sync returned an unexpected response shape.');
+    throw new Error('Trip sync returned an unexpected response shape.');
   }
 
   return payload;

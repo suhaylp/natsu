@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flightsHandler } from '../api/flights';
 import * as notionMapper from '../src/lib/flightsSync/notionMapper';
+import * as notionHotelsMapper from '../src/lib/flightsSync/notionHotelsMapper';
 
 function createMockResponse() {
   let statusCode = 200;
@@ -130,6 +131,10 @@ describe('GET /api/flights', () => {
         rowErrors: [],
       },
     });
+    vi.spyOn(notionHotelsMapper, 'fetchNotionHotelPages').mockResolvedValue([]);
+    vi.spyOn(notionHotelsMapper, 'mapNotionHotelPagesToTripsWithDiagnostics').mockImplementation(() => {
+      throw new notionMapper.NotionMappingError('No valid hotel rows found in Notion');
+    });
 
     await flightsHandler(
       {
@@ -172,6 +177,33 @@ describe('GET /api/flights', () => {
         rowErrors: ['Row 2: Missing required Notion property: trip_id'],
       },
     });
+    vi.spyOn(notionHotelsMapper, 'fetchNotionHotelPages').mockResolvedValue([{ properties: {} }]);
+    vi.spyOn(notionHotelsMapper, 'mapNotionHotelPagesToTripsWithDiagnostics').mockReturnValue({
+      trips: [
+        {
+          id: 'trip-1',
+          title: 'Trip 1',
+          emoji: '🏨',
+          dateRange: 'Sep 1 – 2, 2026',
+          bookings: [
+            {
+              id: 'hotel-1',
+              type: 'hotel',
+              status: 'booked',
+              label: 'Hotel',
+              legs: [],
+              activityDate: 'Sep 1',
+            },
+          ],
+        },
+      ],
+      diagnostics: {
+        totalRows: 1,
+        mappedRows: 1,
+        skippedRows: 0,
+        rowErrors: [],
+      },
+    });
 
     await flightsHandler(
       {
@@ -194,10 +226,17 @@ describe('GET /api/flights', () => {
         },
       ],
       debug: {
-        pagesFetched: 2,
-        mappedRows: 1,
-        skippedRows: 1,
-        skippedRowErrors: ['Row 2: Missing required Notion property: trip_id'],
+        flights: {
+          pagesFetched: 2,
+          mappedRows: 1,
+          skippedRows: 1,
+          skippedRowErrors: ['Row 2: Missing required Notion property: trip_id'],
+        },
+        hotels: {
+          pagesFetched: 1,
+          mappedRows: 1,
+          skippedRows: 0,
+        },
       },
     });
   });

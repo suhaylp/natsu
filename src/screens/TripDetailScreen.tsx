@@ -38,6 +38,7 @@ const timelineDotLeft = -32;
 const timelineDotTop = theme.spacing.xl;
 const bookingTypeMeta: Record<Booking['type'], { icon: string; label: string }> = {
   flight: { icon: '✈️', label: 'Flight' },
+  hotel: { icon: '🏨', label: 'Hotel stay' },
   train: { icon: '🚆', label: 'Train ride' },
   bus: { icon: '🚌', label: 'Bus ride' },
   event: { icon: '📍', label: 'Event' },
@@ -260,6 +261,7 @@ export function TripDetailScreen({ navigation, route }: Props) {
               const canOpenEventDetail =
                 booking.type === 'event' || booking.type === 'concert' || booking.type === 'festival';
               const canOpenFlightDetail = booking.type === 'flight' && booking.legs.length > 0;
+              const canOpenHotelDetail = booking.type === 'hotel';
               const dateToken = firstLeg?.departureDate ?? booking.activityDate;
               const timeToken = firstLeg?.departureTime ?? booking.activityTime;
 
@@ -354,6 +356,18 @@ export function TripDetailScreen({ navigation, route }: Props) {
                         activeOpacity={0.75}
                         onPress={() =>
                           navigation.navigate('EventDetail', {
+                            tripId: trip.id,
+                            bookingId: booking.id,
+                          })
+                        }
+                      >
+                        {notBookedCard}
+                      </TouchableOpacity>
+                    ) : canOpenHotelDetail ? (
+                      <TouchableOpacity
+                        activeOpacity={0.75}
+                        onPress={() =>
+                          navigation.navigate('HotelDetail', {
                             tripId: trip.id,
                             bookingId: booking.id,
                           })
@@ -497,6 +511,18 @@ export function TripDetailScreen({ navigation, route }: Props) {
                             bookingId: booking.id,
                           } as never
                         )
+                      }
+                    >
+                      {bookingCard}
+                    </TouchableOpacity>
+                  ) : canOpenHotelDetail ? (
+                    <TouchableOpacity
+                      activeOpacity={0.75}
+                      onPress={() =>
+                        navigation.navigate('HotelDetail', {
+                          tripId: trip.id,
+                          bookingId: booking.id,
+                        })
                       }
                     >
                       {bookingCard}

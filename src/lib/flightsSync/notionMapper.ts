@@ -481,6 +481,30 @@ function normalizeBookingStatus(rawStatus: string): BookingStatus {
 }
 
 function parseSeats(properties: Record<string, NotionProperty>): FlightLeg['seats'] | undefined {
+  function parseGenericSeats(value: string): FlightLeg['seats'] {
+    const seatCodeMatches = value.match(/\b\d{1,2}[A-Z]\b/g);
+    if (seatCodeMatches && seatCodeMatches.length >= 2) {
+      return {
+        suhayl: seatCodeMatches[0],
+        natalia: seatCodeMatches[1],
+      };
+    }
+
+    const segments = value
+      .split(/\s*(?:\/|,|;|&|\+|\band\b)\s*/i)
+      .map((segment) => segment.trim())
+      .filter(Boolean);
+
+    if (segments.length >= 2) {
+      return {
+        suhayl: segments[0],
+        natalia: segments[1],
+      };
+    }
+
+    return { suhayl: value.trim() };
+  }
+
   const seatsUnassigned = getOptionalText(properties, 'seats_unassigned')?.toLowerCase();
   if (seatsUnassigned === 'true' || seatsUnassigned === 'yes' || seatsUnassigned === '1') {
     return 'not_assigned';
@@ -495,7 +519,7 @@ function parseSeats(properties: Record<string, NotionProperty>): FlightLeg['seat
       return undefined;
     }
 
-    return { suhayl: genericSeats };
+    return parseGenericSeats(genericSeats);
   }
 
   return {

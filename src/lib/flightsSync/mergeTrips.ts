@@ -62,8 +62,12 @@ function sortTripBookings(bookings: Booking[], tripYear: number): Booking[] {
   return [...bookings].sort((a, b) => parseBookingTimestamp(a, tripYear) - parseBookingTimestamp(b, tripYear));
 }
 
-function getFlightBookings(trip: Trip): Booking[] {
-  return trip.bookings.filter((booking) => booking.type === 'flight');
+function isSyncedBookingType(booking: Booking): boolean {
+  return booking.type === 'flight' || booking.type === 'hotel';
+}
+
+function getSyncedBookings(trip: Trip): Booking[] {
+  return trip.bookings.filter((booking) => isSyncedBookingType(booking));
 }
 
 function normalizeTripTitle(title: string): string {
@@ -98,8 +102,8 @@ export function mergeTripsWithRemoteFlights(localTrips: Trip[], remoteTrips: Tri
       return localTrip;
     }
 
-    const localNonFlightBookings = localTrip.bookings.filter((booking) => booking.type !== 'flight');
-    const remoteFlightBookings = getFlightBookings(remoteTrip);
+    const localNonFlightBookings = localTrip.bookings.filter((booking) => !isSyncedBookingType(booking));
+    const remoteFlightBookings = getSyncedBookings(remoteTrip);
     const mergedBookings = sortTripBookings(
       [...remoteFlightBookings, ...localNonFlightBookings],
       getTripYear(localTrip.dateRange)
@@ -115,7 +119,7 @@ export function mergeTripsWithRemoteFlights(localTrips: Trip[], remoteTrips: Tri
   const mergedRemoteOnlyTrips = remoteOnlyTrips
     .filter((trip) => !normalizedLocalTitles.has(normalizeTripTitle(trip.title)))
     .map((trip) => {
-      const flightBookings = getFlightBookings(trip);
+      const flightBookings = getSyncedBookings(trip);
       const dateRange = trip.dateRange || 'TBD';
 
       return {

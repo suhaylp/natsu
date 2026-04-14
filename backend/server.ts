@@ -12,6 +12,7 @@ app.get('/health', (_req, res) => {
     env: {
       notionToken: Boolean(process.env.NOTION_TOKEN),
       notionFlightsDbId: Boolean(process.env.NOTION_FLIGHTS_DB_ID),
+      notionHotelsDbId: Boolean(process.env.NOTION_HOTELS_DB_ID),
       flightsSyncApiKey: Boolean(process.env.FLIGHTS_SYNC_API_KEY),
       notionDefaultTripId: Boolean(process.env.NOTION_DEFAULT_TRIP_ID),
       notionDefaultTripTitle: Boolean(process.env.NOTION_DEFAULT_TRIP_TITLE),

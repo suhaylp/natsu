@@ -12,6 +12,7 @@ export const SECRET_GREETINGS: string[] = [
   'YOU\'RE MY FAVOURITE PERSON!!',
   'HI MY LOVE',
   'MUAHAHAHAHAH',
+  'OO EH OO EH, OO EH OO EH'
   // add more here
 ];
 

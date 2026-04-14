@@ -4,6 +4,7 @@ import { ComingSoonScreen } from '../screens/ComingSoonScreen';
 import { EventDetailScreen } from '../screens/EventDetailScreen';
 import { FlightDetailScreen } from '../screens/FlightDetailScreen';
 import { HomeScreen } from '../screens/HomeScreen';
+import { HotelDetailScreen } from '../screens/HotelDetailScreen';
 import { MoneyStuffScreen } from '../screens/MoneyStuffScreen';
 import { TripDetailScreen } from '../screens/TripDetailScreen';
 import { TripsScreen } from '../screens/TripsScreen';
@@ -14,6 +15,7 @@ export type RootStackParamList = {
   Trips: undefined;
   TripDetail: { tripId: string };
   FlightDetail: { tripId: string; flightId: string };
+  HotelDetail: { tripId: string; bookingId: string };
   EventDetail: {
     tripId?: string;
     bookingId?: string;
@@ -45,6 +47,7 @@ export function AppNavigator() {
       <Stack.Screen name="Trips" component={TripsScreen} />
       <Stack.Screen name="TripDetail" component={TripDetailScreen} />
       <Stack.Screen name="FlightDetail" component={FlightDetailScreen} />
+      <Stack.Screen name="HotelDetail" component={HotelDetailScreen} />
       <Stack.Screen name="EventDetail" component={EventDetailScreen} />
       <Stack.Screen name="ComingSoon" component={ComingSoonScreen} />
       <Stack.Screen name="MoneyStuff" component={MoneyStuffScreen} />

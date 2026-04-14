@@ -124,6 +124,19 @@ describe('mapNotionFlightPagesToTrips', () => {
     expect(booking.baggage).toEqual({ carryOn: '1 each', checkIn: '1 shared' });
   });
 
+  it('splits generic seats field into both passengers when possible', () => {
+    const pages = [
+      createPage({
+        seats: richText('38D / 38F'),
+      }),
+    ];
+
+    const trips = mapNotionFlightPagesToTrips(pages);
+    const booking = trips[0].bookings[0];
+
+    expect(booking.legs[0].seats).toEqual({ suhayl: '38D', natalia: '38F' });
+  });
+
   it('throws mapping errors for missing required properties', () => {
     const pages = [
       createPage({
