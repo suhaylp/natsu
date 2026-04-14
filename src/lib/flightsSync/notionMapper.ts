@@ -373,8 +373,24 @@ function parseFlatFlightRow(page: NotionPage): FlatFlightRow {
   const departure = parseIso(departureIso, 'departure_iso');
   const arrival = parseIso(arrivalIso, 'arrival_iso');
 
-  const tripId = getRequiredText(properties, 'trip_id');
-  const tripTitle = getOptionalText(properties, 'trip_title') ?? tripId;
+  const tripIdFromRow = getOptionalText(properties, 'trip_id');
+  const fallbackTripId = process.env.NOTION_DEFAULT_TRIP_ID?.trim();
+  const tripId = tripIdFromRow ?? fallbackTripId;
+  if (!tripId) {
+    const availableProperties = Object.keys(properties).join(', ');
+    throw new NotionMappingError(
+      'Missing required Notion property: trip_id',
+      [
+        availableProperties ? `Available properties: ${availableProperties}` : null,
+        'Trip relation appears empty. Set Trip on each row, or set NOTION_DEFAULT_TRIP_ID.',
+      ]
+        .filter(Boolean)
+        .join(' | ')
+    );
+  }
+
+  const fallbackTripTitle = process.env.NOTION_DEFAULT_TRIP_TITLE?.trim();
+  const tripTitle = getOptionalText(properties, 'trip_title') ?? fallbackTripTitle ?? tripId;
   const bookingId =
     getOptionalText(properties, 'booking_id') ??
     getOptionalText(properties, 'booking_ref') ??

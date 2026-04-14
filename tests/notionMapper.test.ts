@@ -227,6 +227,50 @@ describe('mapNotionFlightPagesToTrips', () => {
     expect(trips[0].bookings[0].legs[0].toCode).toBe('HND');
   });
 
+  it('uses default trip env fallback when Trip relation is empty', () => {
+    const originalTripId = process.env.NOTION_DEFAULT_TRIP_ID;
+    const originalTripTitle = process.env.NOTION_DEFAULT_TRIP_TITLE;
+    process.env.NOTION_DEFAULT_TRIP_ID = 'sea-japan';
+    process.env.NOTION_DEFAULT_TRIP_TITLE = 'Asia Backpacking';
+
+    try {
+      const pages = [
+        {
+          properties: {
+            Name: titleText('YVR → HND'),
+            Airline: selectValue('ANA'),
+            'Flight Number': richText('NH115'),
+            'Booking Number': richText('EQO9VF'),
+            'From Airport': richText('YVR'),
+            'From City': richText('Vancouver'),
+            'To Airport': richText('HND'),
+            'To City': richText('Tokyo'),
+            'Departure Time': dateValue('2026-07-15T16:45:00-07:00'),
+            'Arrival Time': dateValue('2026-07-16T19:00:00+09:00'),
+            Seats: richText('38D/38F'),
+            Status: formulaStringValue('booked'),
+            Trip: relationValue(''),
+          },
+        },
+      ];
+
+      const trips = mapNotionFlightPagesToTrips(pages);
+      expect(trips[0].id).toBe('sea-japan');
+      expect(trips[0].title).toBe('Asia Backpacking');
+    } finally {
+      if (originalTripId === undefined) {
+        delete process.env.NOTION_DEFAULT_TRIP_ID;
+      } else {
+        process.env.NOTION_DEFAULT_TRIP_ID = originalTripId;
+      }
+      if (originalTripTitle === undefined) {
+        delete process.env.NOTION_DEFAULT_TRIP_TITLE;
+      } else {
+        process.env.NOTION_DEFAULT_TRIP_TITLE = originalTripTitle;
+      }
+    }
+  });
+
   it('hydrates trip title from Trip relation pages during fetch', async () => {
     const fetchImpl = vi.fn(async (url: string) => {
       if (url.includes('/databases/')) {
