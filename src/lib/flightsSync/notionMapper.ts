@@ -70,6 +70,21 @@ type FlatFlightRow = {
 
 const notionVersion = '2022-06-28';
 const monthShortNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
+const propertyAliases: Record<string, string[]> = {
+  trip_id: ['trip', 'tripid'],
+  trip_title: ['trip_name', 'tripname', 'title'],
+  booking_id: ['booking', 'bookingid', 'pnr', 'reservation_id'],
+  booking_label: ['booking_name', 'route_label', 'label'],
+  status: ['booking_status'],
+  flight_number: ['flight', 'flight_no', 'flightno'],
+  from_city: ['origin_city', 'departure_city', 'from'],
+  from_code: ['origin_code', 'origin_iata', 'from_iata'],
+  to_city: ['destination_city', 'arrival_city', 'to'],
+  to_code: ['destination_code', 'destination_iata', 'to_iata'],
+  departure_iso: ['departure', 'departure_datetime', 'departure_time', 'departs_at', 'depart_at'],
+  arrival_iso: ['arrival', 'arrival_datetime', 'arrival_time', 'arrives_at', 'arrive_at'],
+  leg_index: ['leg', 'leg_order', 'segment', 'segment_index'],
+};
 
 function normalizeNotionPropertyKey(propertyKey: string): string {
   return propertyKey.toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -98,7 +113,7 @@ export class NotionMappingError extends Error {
 }
 
 function parseIso(iso: string, fieldName: string): IsoParts {
-  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/);
+  const match = iso.match(/^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}))?/);
   const epochMs = Date.parse(iso);
 
   if (!match || Number.isNaN(epochMs)) {
@@ -109,8 +124,8 @@ function parseIso(iso: string, fieldName: string): IsoParts {
   const year = Number(yearToken);
   const month = Number(monthToken);
   const day = Number(dayToken);
-  const hour = Number(hourToken);
-  const minute = Number(minuteToken);
+  const hour = hourToken ? Number(hourToken) : 0;
+  const minute = minuteToken ? Number(minuteToken) : 0;
 
   if ([year, month, day, hour, minute].some((value) => Number.isNaN(value))) {
     throw new NotionMappingError(`Invalid ISO datetime in ${fieldName}`, `Value received: ${iso}`);
@@ -194,15 +209,21 @@ function readPropertyText(property?: NotionProperty): string | undefined {
 }
 
 function getPropertyByKey(properties: Record<string, NotionProperty>, key: string): NotionProperty | undefined {
-  if (properties[key]) {
-    return properties[key];
-  }
+  const candidates = [key, ...(propertyAliases[key] ?? [])];
+  const normalizedEntries = Object.entries(properties).map(([name, property]) => ({
+    normalizedName: normalizeNotionPropertyKey(name),
+    property,
+  }));
 
-  const normalizedKey = normalizeNotionPropertyKey(key);
+  for (const candidate of candidates) {
+    if (properties[candidate]) {
+      return properties[candidate];
+    }
 
-  for (const [propertyName, property] of Object.entries(properties)) {
-    if (normalizeNotionPropertyKey(propertyName) === normalizedKey) {
-      return property;
+    const normalizedCandidate = normalizeNotionPropertyKey(candidate);
+    const matched = normalizedEntries.find((entry) => entry.normalizedName === normalizedCandidate);
+    if (matched) {
+      return matched.property;
     }
   }
 
@@ -213,7 +234,16 @@ function getRequiredText(properties: Record<string, NotionProperty>, key: string
   const value = readPropertyText(getPropertyByKey(properties, key));
 
   if (!value) {
-    throw new NotionMappingError(`Missing required Notion property: ${key}`);
+    const availableProperties = Object.keys(properties).join(', ');
+    const aliasList = propertyAliases[key]?.join(', ');
+    const details = [
+      availableProperties ? `Available properties: ${availableProperties}` : null,
+      aliasList ? `Accepted aliases for ${key}: ${aliasList}` : null,
+    ]
+      .filter(Boolean)
+      .join(' | ');
+
+    throw new NotionMappingError(`Missing required Notion property: ${key}`, details || undefined);
   }
 
   return value;
