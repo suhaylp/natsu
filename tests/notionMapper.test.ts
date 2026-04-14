@@ -105,4 +105,41 @@ describe('mapNotionFlightPagesToTrips', () => {
 
     expect(() => mapNotionFlightPagesToTrips(pages)).toThrow(NotionMappingError);
   });
+
+  it('supports normalized Notion property names', () => {
+    const page = createPage() as { properties: Record<string, NotionProperty> };
+    const originalProperties = page.properties;
+
+    page.properties = {
+      'trip id': originalProperties.trip_id,
+      'Trip Title': originalProperties.trip_title,
+      booking_id: originalProperties.booking_id,
+      booking_label: originalProperties.booking_label,
+      status: originalProperties.status,
+      flight_number: originalProperties.flight_number,
+      from_city: originalProperties.from_city,
+      from_code: originalProperties.from_code,
+      to_city: originalProperties.to_city,
+      to_code: originalProperties.to_code,
+      'departure iso': originalProperties.departure_iso,
+      'arrival-iso': originalProperties.arrival_iso,
+      'leg index': originalProperties.leg_index,
+    };
+
+    const trips = mapNotionFlightPagesToTrips([page]);
+    expect(trips).toHaveLength(1);
+    expect(trips[0].bookings[0].legs[0].flightNumber).toBe('BA84');
+  });
+
+  it('skips invalid rows when at least one valid row exists', () => {
+    const validPage = createPage();
+    const invalidPage = createPage({
+      departure_iso: richText(''),
+    });
+
+    const trips = mapNotionFlightPagesToTrips([validPage, invalidPage]);
+    expect(trips).toHaveLength(1);
+    expect(trips[0].bookings).toHaveLength(1);
+    expect(trips[0].bookings[0].legs).toHaveLength(1);
+  });
 });

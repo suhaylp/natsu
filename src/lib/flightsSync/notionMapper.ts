@@ -71,6 +71,10 @@ type FlatFlightRow = {
 const notionVersion = '2022-06-28';
 const monthShortNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 
+function normalizeNotionPropertyKey(propertyKey: string): string {
+  return propertyKey.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 export class NotionFetchError extends Error {
   statusCode: number;
   details?: string;
@@ -189,8 +193,24 @@ function readPropertyText(property?: NotionProperty): string | undefined {
   }
 }
 
+function getPropertyByKey(properties: Record<string, NotionProperty>, key: string): NotionProperty | undefined {
+  if (properties[key]) {
+    return properties[key];
+  }
+
+  const normalizedKey = normalizeNotionPropertyKey(key);
+
+  for (const [propertyName, property] of Object.entries(properties)) {
+    if (normalizeNotionPropertyKey(propertyName) === normalizedKey) {
+      return property;
+    }
+  }
+
+  return undefined;
+}
+
 function getRequiredText(properties: Record<string, NotionProperty>, key: string): string {
-  const value = readPropertyText(properties[key]);
+  const value = readPropertyText(getPropertyByKey(properties, key));
 
   if (!value) {
     throw new NotionMappingError(`Missing required Notion property: ${key}`);
@@ -200,7 +220,7 @@ function getRequiredText(properties: Record<string, NotionProperty>, key: string
 }
 
 function getOptionalText(properties: Record<string, NotionProperty>, key: string): string | undefined {
-  return readPropertyText(properties[key]);
+  return readPropertyText(getPropertyByKey(properties, key));
 }
 
 function getRequiredNumber(properties: Record<string, NotionProperty>, key: string): number {
@@ -455,16 +475,40 @@ function buildTripsFromRows(rows: FlatFlightRow[]): Trip[] {
 }
 
 export function mapNotionFlightPagesToTrips(pages: NotionPage[]): Trip[] {
-  try {
-    const rows = pages.map((page) => parseFlatFlightRow(page));
-    return buildTripsFromRows(rows);
-  } catch (error) {
-    if (error instanceof NotionMappingError) {
-      throw error;
-    }
+  const rows: FlatFlightRow[] = [];
+  const rowErrors: string[] = [];
 
-    throw new NotionMappingError('Unexpected mapping error', error instanceof Error ? error.message : undefined);
+  pages.forEach((page, index) => {
+    try {
+      rows.push(parseFlatFlightRow(page));
+    } catch (error) {
+      if (error instanceof NotionMappingError) {
+        const details = error.details ? ` (${error.details})` : '';
+        rowErrors.push(`Row ${index + 1}: ${error.message}${details}`);
+        return;
+      }
+
+      rowErrors.push(
+        `Row ${index + 1}: Unexpected mapping error${
+          error instanceof Error && error.message ? ` (${error.message})` : ''
+        }`
+      );
+    }
+  });
+
+  if (rows.length === 0) {
+    throw new NotionMappingError(
+      'No valid flight rows found in Notion',
+      rowErrors.length > 0 ? rowErrors.slice(0, 3).join(' | ') : undefined
+    );
   }
+
+  if (rowErrors.length > 0 && process.env.NODE_ENV !== 'test') {
+    // eslint-disable-next-line no-console
+    console.warn(`Skipped ${rowErrors.length} invalid Notion flight row(s).`, rowErrors.slice(0, 5));
+  }
+
+  return buildTripsFromRows(rows);
 }
 
 export async function fetchNotionFlightPages(params: {
