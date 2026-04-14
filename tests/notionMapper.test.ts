@@ -404,4 +404,28 @@ describe('mapNotionFlightPagesToTrips', () => {
     expect(trips[0].id).toBe('sea-japan');
     expect(trips[0].title).toBe('Asia Backpacking');
   });
+
+  it('maps Upcoming status as booked', () => {
+    const pages = [
+      {
+        properties: {
+          Name: titleText('YVR → HND'),
+          Airline: selectValue('ANA'),
+          'Flight Number': richText('NH115'),
+          'Booking Number': richText('EQO9VF'),
+          'From Airport': richText('YVR'),
+          'From City': richText('Vancouver'),
+          'To Airport': richText('HND'),
+          'To City': richText('Tokyo'),
+          'Departure Time': dateValue('2026-07-15T16:45:00-07:00'),
+          'Arrival Time': dateValue('2026-07-16T19:00:00+09:00'),
+          Status: formulaStringValue('Upcoming'),
+          Trip: relationValue(''),
+        },
+      },
+    ];
+
+    const trips = mapNotionFlightPagesToTrips(pages);
+    expect(trips[0].bookings[0].status).toBe('booked');
+  });
 });

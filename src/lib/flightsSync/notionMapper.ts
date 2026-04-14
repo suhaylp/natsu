@@ -345,8 +345,13 @@ function normalizeBookingStatus(rawStatus: string): BookingStatus {
     normalized === 'booked' ||
     normalized === 'confirmed' ||
     normalized === 'ticketed' ||
+    normalized === 'upcoming' ||
+    normalized === 'scheduled' ||
+    normalized === 'active' ||
     normalized.includes('booked') ||
-    normalized.includes('confirm')
+    normalized.includes('confirm') ||
+    normalized.includes('upcoming') ||
+    normalized.includes('schedul')
   ) {
     return 'booked';
   }
@@ -355,17 +360,19 @@ function normalizeBookingStatus(rawStatus: string): BookingStatus {
     normalized === 'not_booked' ||
     normalized === 'planned' ||
     normalized === 'to_book' ||
+    normalized === 'pending' ||
+    normalized === 'draft' ||
+    normalized === 'unbooked' ||
     normalized.includes('not_booked') ||
     normalized.includes('to_book') ||
-    normalized.includes('planned')
+    normalized.includes('planned') ||
+    normalized.includes('pending') ||
+    normalized.includes('draft')
   ) {
     return 'not_booked';
   }
 
-  throw new NotionMappingError(
-    'Invalid booking status value. Expected booked or not_booked',
-    `Status received: ${rawStatus}`
-  );
+  return 'booked';
 }
 
 function parseSeats(properties: Record<string, NotionProperty>): FlightLeg['seats'] | undefined {
