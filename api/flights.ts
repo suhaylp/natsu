@@ -7,6 +7,8 @@ import {
   NotionMappingError,
 } from '../src/lib/flightsSync/notionMapper';
 import { fetchNotionHotelPages, mapNotionHotelPagesToTripsWithDiagnostics } from '../src/lib/flightsSync/notionHotelsMapper';
+import { fetchNotionIdeaPages, mapNotionIdeaPagesToTripsWithDiagnostics } from '../src/lib/flightsSync/notionIdeasMapper';
+import { enrichTripsWithBookingCoordinates } from '../src/lib/flightsSync/bookingGeocoder';
 
 type ApiRequest = {
   method?: string;
@@ -23,6 +25,14 @@ type FlightsApiDebugResponse = FlightsApiResponse & {
       skippedRowErrors: string[];
     };
     hotels: {
+      databaseId: string | null;
+      pagesFetched: number;
+      mappedRows: number;
+      skippedRows: number;
+      skippedRowErrors: string[];
+      error?: string;
+    };
+    ideas: {
       databaseId: string | null;
       pagesFetched: number;
       mappedRows: number;
@@ -150,6 +160,7 @@ function mergeRemoteTrips(...tripGroups: Trip[][]): Trip[] {
 }
 
 const fallbackHotelsDbId = '341e0e6fb1188020b7d4ee19676951b2';
+const fallbackIdeasDbId = '343e0e6fb1188000bb6ee72c91cd9c54';
 
 export async function flightsHandler(req: ApiRequest, res: ApiResponse): Promise<void> {
   if (req.method !== 'GET') {
@@ -164,6 +175,7 @@ export async function flightsHandler(req: ApiRequest, res: ApiResponse): Promise
   const notionToken = process.env.NOTION_TOKEN;
   const notionFlightsDbId = process.env.NOTION_FLIGHTS_DB_ID;
   const notionHotelsDbId = process.env.NOTION_HOTELS_DB_ID?.trim() || fallbackHotelsDbId;
+  const notionIdeasDbId = process.env.NOTION_IDEAS_DB_ID?.trim() || fallbackIdeasDbId;
   const flightsSyncApiKey = process.env.FLIGHTS_SYNC_API_KEY;
 
   if (!notionToken || !notionFlightsDbId || !flightsSyncApiKey) {
@@ -224,7 +236,40 @@ export async function flightsHandler(req: ApiRequest, res: ApiResponse): Promise
       }
     }
 
-    const trips = mergeRemoteTrips(flightTrips, hotelTrips);
+    let ideaPagesCount = 0;
+    let ideaTrips: Trip[] = [];
+    let ideaDiagnostics = {
+      mappedRows: 0,
+      skippedRows: 0,
+      rowErrors: [] as string[],
+    };
+    let ideaError: string | undefined;
+
+    if (notionIdeasDbId) {
+      try {
+        const ideaPages = await fetchNotionIdeaPages({
+          notionToken,
+          databaseId: notionIdeasDbId,
+        });
+        ideaPagesCount = ideaPages.length;
+        const ideaMappingResult = mapNotionIdeaPagesToTripsWithDiagnostics(ideaPages);
+        ideaTrips = ideaMappingResult.trips;
+        ideaDiagnostics = {
+          mappedRows: ideaMappingResult.diagnostics.mappedRows,
+          skippedRows: ideaMappingResult.diagnostics.skippedRows,
+          rowErrors: ideaMappingResult.diagnostics.rowErrors,
+        };
+      } catch (error) {
+        if (error instanceof NotionFetchError || error instanceof NotionMappingError) {
+          ideaError = `${error.message}${error.details ? ` | ${error.details}` : ''}`;
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    const mergedTrips = mergeRemoteTrips(flightTrips, hotelTrips, ideaTrips);
+    const trips = await enrichTripsWithBookingCoordinates(mergedTrips);
 
     const basePayload: FlightsApiResponse = {
       generatedAt: new Date().toISOString(),
@@ -248,6 +293,14 @@ export async function flightsHandler(req: ApiRequest, res: ApiResponse): Promise
             skippedRows: hotelDiagnostics.skippedRows,
             skippedRowErrors: hotelDiagnostics.rowErrors.slice(0, 50),
             ...(hotelError ? { error: hotelError } : {}),
+          },
+          ideas: {
+            databaseId: notionIdeasDbId || null,
+            pagesFetched: ideaPagesCount,
+            mappedRows: ideaDiagnostics.mappedRows,
+            skippedRows: ideaDiagnostics.skippedRows,
+            skippedRowErrors: ideaDiagnostics.rowErrors.slice(0, 50),
+            ...(ideaError ? { error: ideaError } : {}),
           },
         },
       };

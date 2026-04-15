@@ -153,12 +153,12 @@ export function FlightDetailScreen({ navigation, route }: Props) {
           { label: 'From', value: `${firstLeg.fromCity} (${firstLeg.fromCode})` },
           { label: 'To', value: `${firstLeg.toCity} (${firstLeg.toCode})` },
           {
-            label: 'Departure',
-            value: formatDateTimeWithTimezone(firstLeg.departureDate, firstLeg.departureTime, firstLeg.fromCode),
-          },
-          {
-            label: 'Arrival',
-            value: formatDateTimeWithTimezone(firstLeg.arrivalDate, firstLeg.arrivalTime, firstLeg.toCode),
+            label: 'Schedule',
+            value: `${formatDateTimeWithTimezone(
+              firstLeg.departureDate,
+              firstLeg.departureTime,
+              firstLeg.fromCode
+            )} → ${formatDateTimeWithTimezone(firstLeg.arrivalDate, firstLeg.arrivalTime, firstLeg.toCode)}`,
           },
           ...(firstLeg.duration ? [{ label: 'Duration', value: firstLeg.duration }] : []),
           ...baggageRows,

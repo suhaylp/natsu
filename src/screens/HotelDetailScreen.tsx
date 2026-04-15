@@ -61,7 +61,7 @@ export function HotelDetailScreen({ navigation, route }: Props) {
   const checkoutLabel = hotel?.checkOutDate
     ? [hotel.checkOutDate, hotel.checkOutTime].filter(Boolean).join(' · ')
     : 'TBD';
-  const locationLabel = [hotel?.city, hotel?.address, booking?.activityLocation]
+  const locationLabel = [booking?.activityLocation, hotel?.address, hotel?.city]
     .filter(Boolean)
     .find((value, index, values) => values.indexOf(value) === index);
 

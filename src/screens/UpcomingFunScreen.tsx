@@ -40,16 +40,6 @@ const MANUAL_EVENTS: EventItem[] = [
     notes: 'Bring jackets for the evening temperature drop.',
   },
   {
-    id: 'manual-2',
-    title: 'Escapade Music Festival',
-    date: new Date('2026-06-01'),
-    dateLabel: 'Jun 2026',
-    location: 'Ottawa',
-    category: 'Music',
-    confirmed: false,
-    image: require('../../assets/photos/esapade.jpg'),
-  },
-  {
     id: 'manual-3',
     title: 'FVDED in the Park',
     date: new Date('2026-07-01'),

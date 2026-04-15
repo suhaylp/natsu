@@ -70,6 +70,10 @@ function getSyncedBookings(trip: Trip): Booking[] {
   return trip.bookings.filter((booking) => isSyncedBookingType(booking));
 }
 
+function getNonSyncedBookings(trip: Trip): Booking[] {
+  return trip.bookings.filter((booking) => !isSyncedBookingType(booking));
+}
+
 function normalizeTripTitle(title: string): string {
   return title.trim().toLowerCase().replace(/\s+/g, ' ');
 }
@@ -102,10 +106,18 @@ export function mergeTripsWithRemoteFlights(localTrips: Trip[], remoteTrips: Tri
       return localTrip;
     }
 
-    const localNonFlightBookings = localTrip.bookings.filter((booking) => !isSyncedBookingType(booking));
-    const remoteFlightBookings = getSyncedBookings(remoteTrip);
+    const localNonSyncedBookings = getNonSyncedBookings(localTrip);
+    const remoteSyncedBookings = getSyncedBookings(remoteTrip);
+    const remoteNonSyncedBookings = getNonSyncedBookings(remoteTrip);
+    const mergedNonSyncedBookingMap = new Map<string, Booking>(
+      localNonSyncedBookings.map((booking) => [`${booking.type}:${booking.id}`, booking])
+    );
+    for (const booking of remoteNonSyncedBookings) {
+      mergedNonSyncedBookingMap.set(`${booking.type}:${booking.id}`, booking);
+    }
+
     const mergedBookings = sortTripBookings(
-      [...remoteFlightBookings, ...localNonFlightBookings],
+      [...remoteSyncedBookings, ...Array.from(mergedNonSyncedBookingMap.values())],
       getTripYear(localTrip.dateRange)
     );
 
@@ -119,12 +131,12 @@ export function mergeTripsWithRemoteFlights(localTrips: Trip[], remoteTrips: Tri
   const mergedRemoteOnlyTrips = remoteOnlyTrips
     .filter((trip) => !normalizedLocalTitles.has(normalizeTripTitle(trip.title)))
     .map((trip) => {
-      const flightBookings = getSyncedBookings(trip);
+      const allRemoteBookings = [...getSyncedBookings(trip), ...getNonSyncedBookings(trip)];
       const dateRange = trip.dateRange || 'TBD';
 
       return {
         ...trip,
-        bookings: sortTripBookings(flightBookings, getTripYear(dateRange)),
+        bookings: sortTripBookings(allRemoteBookings, getTripYear(dateRange)),
         title: trip.title || 'Untitled trip',
         emoji: trip.emoji || '✈️',
         dateRange,

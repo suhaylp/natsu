@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { flightsHandler } from '../api/flights';
 import * as notionMapper from '../src/lib/flightsSync/notionMapper';
 import * as notionHotelsMapper from '../src/lib/flightsSync/notionHotelsMapper';
+import * as notionIdeasMapper from '../src/lib/flightsSync/notionIdeasMapper';
 
 function createMockResponse() {
   let statusCode = 200;
@@ -36,6 +37,12 @@ describe('GET /api/flights', () => {
     process.env.NOTION_TOKEN = 'notion-token';
     process.env.NOTION_FLIGHTS_DB_ID = 'db-id';
     process.env.FLIGHTS_SYNC_API_KEY = 'shared-key';
+    process.env.NOTION_IDEAS_DB_ID = 'ideas-db-id';
+
+    vi.spyOn(notionIdeasMapper, 'fetchNotionIdeaPages').mockResolvedValue([]);
+    vi.spyOn(notionIdeasMapper, 'mapNotionIdeaPagesToTripsWithDiagnostics').mockImplementation(() => {
+      throw new notionMapper.NotionMappingError('No valid idea rows found in Notion');
+    });
   });
 
   afterEach(() => {

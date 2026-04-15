@@ -13,6 +13,7 @@ import { theme } from '../theme/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 
 type Props = StackScreenProps<RootStackParamList, 'Trips'>;
+const tripCardPhotoHeight = 176;
 
 const monthMap: Record<string, number> = {
   Jan: 0,
@@ -140,78 +141,76 @@ export function TripsScreen({ navigation }: Props) {
     const activePhotoIndex = photoIndexByTrip[trip.id] ?? 0;
 
     return (
-      <TouchableOpacity
-        key={key}
-        activeOpacity={0.75}
-        onPress={() => navigation.navigate('TripDetail', { tripId: trip.id })}
-        style={{ marginHorizontal: theme.spacing.xl, marginBottom: theme.spacing.md }}
-      >
-        <View>
-          {hasPhotos ? (
-            <View
-              style={{
-                marginBottom: 0,
-                borderTopLeftRadius: theme.radii.card,
-                borderTopRightRadius: theme.radii.card,
-                borderBottomLeftRadius: 0,
-                borderBottomRightRadius: 0,
-                overflow: 'hidden',
-                borderWidth: 1,
-                borderColor: theme.colors.cardBorder,
-                borderBottomWidth: 0,
+      <View key={key} style={{ marginHorizontal: theme.spacing.xl, marginBottom: theme.spacing.md }}>
+        {hasPhotos ? (
+          <View
+            style={{
+              marginBottom: 0,
+              borderTopLeftRadius: theme.radii.card,
+              borderTopRightRadius: theme.radii.card,
+              borderBottomLeftRadius: 0,
+              borderBottomRightRadius: 0,
+              overflow: 'hidden',
+              borderWidth: 1,
+              borderColor: theme.colors.cardBorder,
+              borderBottomWidth: 0,
+            }}
+          >
+            <ScrollView
+              horizontal={true}
+              pagingEnabled={true}
+              nestedScrollEnabled={true}
+              directionalLockEnabled={true}
+              alwaysBounceHorizontal={false}
+              showsHorizontalScrollIndicator={false}
+              onMomentumScrollEnd={(event) => {
+                const nextIndex = Math.round(event.nativeEvent.contentOffset.x / cardSlideWidth);
+                setPhotoIndexByTrip((prev) => ({ ...prev, [trip.id]: nextIndex }));
               }}
             >
-              <ScrollView
-                horizontal={true}
-                pagingEnabled={true}
-                showsHorizontalScrollIndicator={false}
-                onMomentumScrollEnd={(event) => {
-                  const nextIndex = Math.round(event.nativeEvent.contentOffset.x / cardSlideWidth);
-                  setPhotoIndexByTrip((prev) => ({ ...prev, [trip.id]: nextIndex }));
+              {photos.map((photo, index) => (
+                <Image
+                  key={`${trip.id}-photo-${index}`}
+                  source={photo}
+                  resizeMode="cover"
+                  style={{ width: cardSlideWidth, height: tripCardPhotoHeight }}
+                />
+              ))}
+            </ScrollView>
+
+            {photos.length > 1 ? (
+              <View
+                style={{
+                  position: 'absolute',
+                  left: 0,
+                  right: 0,
+                  bottom: theme.spacing.xs + 1,
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  justifyContent: 'center',
                 }}
               >
-                {photos.map((photo, index) => (
-                  <Image
-                    key={`${trip.id}-photo-${index}`}
-                    source={photo}
-                    resizeMode="cover"
-                    style={{ width: cardSlideWidth, height: 140 }}
-                  />
-                ))}
-              </ScrollView>
+                {photos.map((_, index) => {
+                  const isActive = index === activePhotoIndex;
+                  return (
+                    <View
+                      key={`${trip.id}-dot-${index}`}
+                      style={{
+                        width: isActive ? 14 : 5,
+                        height: 5,
+                        borderRadius: 3,
+                        backgroundColor: isActive ? '#FFFFFF' : 'rgba(255,255,255,0.55)',
+                        marginHorizontal: 2,
+                      }}
+                    />
+                  );
+                })}
+              </View>
+            ) : null}
+          </View>
+        ) : null}
 
-              {photos.length > 1 ? (
-                <View
-                  style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    bottom: theme.spacing.xs + 1,
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}
-                >
-                  {photos.map((_, index) => {
-                    const isActive = index === activePhotoIndex;
-                    return (
-                      <View
-                        key={`${trip.id}-dot-${index}`}
-                        style={{
-                          width: isActive ? 14 : 5,
-                          height: 5,
-                          borderRadius: 3,
-                          backgroundColor: isActive ? '#FFFFFF' : 'rgba(255,255,255,0.55)',
-                          marginHorizontal: 2,
-                        }}
-                      />
-                    );
-                  })}
-                </View>
-              ) : null}
-            </View>
-          ) : null}
-
+        <TouchableOpacity activeOpacity={0.75} onPress={() => navigation.navigate('TripDetail', { tripId: trip.id })}>
           <GlassCard
             style={
               hasPhotos
@@ -290,8 +289,8 @@ export function TripsScreen({ navigation }: Props) {
               <Text style={{ color: theme.colors.accent, fontSize: 24 }}>→</Text>
             </View>
           </GlassCard>
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+      </View>
     );
   };
 

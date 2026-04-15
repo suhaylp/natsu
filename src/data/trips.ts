@@ -56,6 +56,9 @@ type Booking = {
   activityDate?: string;
   activityTime?: string;
   activityLocation?: string;
+  latitude?: number;
+  longitude?: number;
+  imageUrl?: string;
   hotelStay?: HotelStay;
 };
 
@@ -75,13 +78,37 @@ export const trips: Trip[] = [
     title: 'Montreal + Ottawa',
     emoji: '🇨🇦',
     dateRange: 'Jun 22 – 29, 2026',
-    bookings: [],
+    bookings: [
+      {
+        id: 'escapade-festival-ottawa',
+        type: 'festival',
+        status: 'not_booked',
+        label: 'Escapade Festival',
+        legs: [],
+        activityDate: 'Jun 27',
+        activityTime: '16:00',
+        activityLocation: 'Lansdowne Park, Ottawa, Canada',
+        notes: 'Weekend pass idea',
+      },
+    ],
   },
   {
     id: 'sea-japan',
     title: 'Asia Backpacking',
     emoji: '🎒🌏',
     dateRange: 'Jul 15 – Aug 24, 2026',
-    bookings: [],
+    bookings: [
+      {
+        id: 'chiang-mai-elephant-sanctuary',
+        type: 'event',
+        status: 'not_booked',
+        label: 'Elephant Sanctuary Visit',
+        legs: [],
+        activityDate: 'Jul 26',
+        activityTime: '09:00',
+        activityLocation: 'Elephant Nature Park, Chiang Mai, Thailand',
+        notes: 'Day trip idea',
+      },
+    ],
   },
 ];

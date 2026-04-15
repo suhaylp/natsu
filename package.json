@@ -7,6 +7,7 @@
     "ios": "expo start --ios",
     "android": "expo start --android",
     "web": "expo start --web",
+    "web:build": "expo export -p web",
     "backend:start": "tsx backend/server.ts",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -34,10 +35,14 @@
     "expo-status-bar": "~3.0.9",
     "express": "^4.21.2",
     "react": "19.1.0",
+    "react-dom": "19.1.0",
     "react-native": "0.81.5",
     "react-native-gesture-handler": "~2.28.0",
+    "react-native-maps": "1.20.1",
     "react-native-safe-area-context": "~5.6.2",
     "react-native-screens": "~4.16.0",
+    "react-native-svg": "15.12.1",
+    "react-native-web": "^0.21.0",
     "tsx": "^4.21.0"
   },
   "private": true,

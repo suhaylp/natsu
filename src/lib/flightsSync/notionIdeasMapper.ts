@@ -1,9 +1,15 @@
 import { trips as localTrips } from '../../data/trips';
-import type { Booking, BookingStatus, Trip } from '../../data/trips';
+import type { Booking, BookingStatus, BookingType, Trip } from '../../data/trips';
 import type { MappingDiagnostics } from './notionMapper';
 import { fetchNotionFlightPages, NotionMappingError } from './notionMapper';
 
 type NotionRichText = { plain_text?: string };
+
+type NotionFile = {
+  type?: 'file' | 'external';
+  file?: { url?: string | null } | null;
+  external?: { url?: string | null } | null;
+};
 
 type NotionProperty = {
   id?: string;
@@ -28,6 +34,7 @@ type NotionProperty = {
   email?: string | null;
   phone_number?: string | null;
   checkbox?: boolean | null;
+  files?: NotionFile[];
 };
 
 type NotionPage = {
@@ -48,25 +55,24 @@ type IsoParts = {
   epochMs: number;
 };
 
-type FlatHotelRow = {
+type FlatIdeaRow = {
   tripId: string;
   tripTitle: string;
   tripEmoji?: string;
   tripDateRange?: string;
   bookingId: string;
   bookingLabel: string;
+  bookingType: BookingType;
   status: BookingStatus;
-  bookingRef?: string;
   city?: string;
+  country?: string;
   address?: string;
   latitude?: number;
   longitude?: number;
-  roomType?: string;
-  provider?: string;
-  nights?: string;
-  notes?: string;
-  checkIn: IsoParts;
-  checkOut: IsoParts;
+  description?: string;
+  price?: number;
+  photoUrls: string[];
+  scheduledAt: IsoParts;
 };
 
 const monthShortNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
@@ -74,20 +80,19 @@ const monthShortNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug',
 const propertyAliases: Record<string, string[]> = {
   trip_id: ['trip', 'tripid'],
   trip_title: ['trip_name', 'tripname'],
-  booking_id: ['booking', 'bookingid', 'reservation_id', 'booking_number', 'bookingnumber', 'confirmation'],
-  booking_label: ['hotel_name', 'hotel', 'property_name', 'property', 'name'],
-  status: ['booking_status'],
-  checkin_iso: ['check_in', 'checkin', 'checkin_time', 'check_in_time', 'checkin_date', 'start_date', 'start'],
-  checkout_iso: ['check_out', 'checkout', 'checkout_time', 'check_out_time', 'checkout_date', 'end_date', 'end'],
-  city: ['hotel_city', 'location_city', 'destination_city', 'town'],
-  address: ['hotel_address', 'location', 'street_address'],
+  booking_id: ['idea_id', 'ideaid'],
+  booking_label: ['name', 'title', 'idea', 'activity', 'idea_name'],
+  status: ['confirmed', 'is_confirmed', 'booked'],
+  type: ['category'],
+  date_iso: ['date', 'datetime', 'when', 'event_date', 'start_date', 'start'],
+  city: ['location_city'],
+  country: ['location_country'],
+  address: ['location', 'street_address'],
   latitude: ['lat', 'lattitude', 'location_latitude', 'coords_latitude', 'map_latitude', 'geo_latitude'],
   longitude: ['lng', 'lon', 'long', 'location_longitude', 'coords_longitude', 'map_longitude', 'geo_longitude'],
-  room_type: ['room', 'roomtype'],
-  provider: ['booked_via', 'chain', 'brand'],
-  confirmation: ['confirmation_number', 'confirmation_code', 'reservation', 'reservation_number', 'booking_ref'],
-  nights: ['night_count', 'num_nights', 'duration_nights'],
-  notes: ['note'],
+  description: ['details', 'notes'],
+  price: ['cost', 'budget'],
+  photos: ['images', 'photo'],
 };
 
 type TripDateRangeWindow = {
@@ -101,8 +106,13 @@ function normalizeTripTitle(value: string): string {
   return value.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
-function normalizeBookingKey(value: string): string {
-  return value.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
+function normalizeIdeaKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_');
+}
+
+function looksLikeNotionPageId(value: string): boolean {
+  const compact = value.replace(/-/g, '');
+  return /^[0-9a-f]{32}$/i.test(compact);
 }
 
 const monthToNumber = new Map<string, number>(
@@ -278,8 +288,60 @@ function normalizeCoordinatePair(
   return { latitude: lat, longitude: lon };
 }
 
-function normalizeBookingStatus(rawStatus: string): BookingStatus {
-  const normalized = rawStatus.trim().toLowerCase().replace(/[\s-]+/g, '_');
+function getOptionalCheckbox(properties: Record<string, NotionProperty>, key: string): boolean | undefined {
+  const property = getPropertyByKey(properties, key);
+  if (!property) {
+    return undefined;
+  }
+
+  if (property.type === 'checkbox') {
+    if (property.checkbox === true) {
+      return true;
+    }
+    if (property.checkbox === false) {
+      return false;
+    }
+  }
+
+  const text = readPropertyText(property)?.trim().toLowerCase();
+  if (text === 'true' || text === 'yes' || text === '1') {
+    return true;
+  }
+  if (text === 'false' || text === 'no' || text === '0') {
+    return false;
+  }
+
+  return undefined;
+}
+
+function getOptionalFileUrls(properties: Record<string, NotionProperty>, key: string): string[] {
+  const property = getPropertyByKey(properties, key);
+  if (!property || property.type !== 'files') {
+    return [];
+  }
+
+  return (property.files ?? [])
+    .map((entry) => {
+      if (entry.type === 'file') {
+        return entry.file?.url ?? undefined;
+      }
+      if (entry.type === 'external') {
+        return entry.external?.url ?? undefined;
+      }
+      return entry.file?.url ?? entry.external?.url ?? undefined;
+    })
+    .filter((value): value is string => Boolean(value));
+}
+
+function normalizeBookingStatus(rawStatus: string | undefined, rawCheckbox: boolean | undefined): BookingStatus {
+  if (rawCheckbox === true) {
+    return 'booked';
+  }
+  if (rawCheckbox === false) {
+    return 'not_booked';
+  }
+
+  const normalized = (rawStatus ?? '').trim().toLowerCase().replace(/[\s-]+/g, '_');
 
   if (
     normalized === 'booked' ||
@@ -312,7 +374,32 @@ function normalizeBookingStatus(rawStatus: string): BookingStatus {
     return 'not_booked';
   }
 
-  return 'booked';
+  return 'not_booked';
+}
+
+function mapIdeaType(rawType: string | undefined): BookingType {
+  const normalized = normalizeIdeaKey(rawType ?? 'event');
+
+  if (normalized.includes('concert')) {
+    return 'concert';
+  }
+  if (normalized.includes('festival')) {
+    return 'festival';
+  }
+  if (normalized.includes('food_tour') || normalized.includes('foodtour') || normalized === 'food') {
+    return 'food-tour';
+  }
+  if (normalized.includes('ferry')) {
+    return 'ferry';
+  }
+  if (normalized.includes('train')) {
+    return 'train';
+  }
+  if (normalized.includes('bus')) {
+    return 'bus';
+  }
+
+  return 'event';
 }
 
 function createPlaceholderIso(fieldName: string): IsoParts {
@@ -380,15 +467,13 @@ function inferTripFromTitle(tripTitle?: string): { tripId: string; tripTitle: st
   return localTripByTitle.get(normalizeTripTitle(tripTitle));
 }
 
-function inferTripFromDate(checkIn: IsoParts): { tripId: string; tripTitle: string } | undefined {
-  if (!Number.isFinite(checkIn.epochMs)) {
+function inferTripFromDate(scheduledAt: IsoParts): { tripId: string; tripTitle: string } | undefined {
+  if (!Number.isFinite(scheduledAt.epochMs)) {
     return undefined;
   }
 
-  const checkInUtc = Date.UTC(checkIn.year, checkIn.month - 1, checkIn.day, 12, 0, 0, 0);
-  const matchedTrip = localTripDateWindows.find(
-    (range) => checkInUtc >= range.startEpochMs && checkInUtc <= range.endEpochMs
-  );
+  const utcTime = Date.UTC(scheduledAt.year, scheduledAt.month - 1, scheduledAt.day, 12, 0, 0, 0);
+  const matchedTrip = localTripDateWindows.find((range) => utcTime >= range.startEpochMs && utcTime <= range.endEpochMs);
 
   if (!matchedTrip) {
     return undefined;
@@ -400,21 +485,22 @@ function inferTripFromDate(checkIn: IsoParts): { tripId: string; tripTitle: stri
   };
 }
 
-function parseFlatHotelRow(page: NotionPage): FlatHotelRow {
+function parseFlatIdeaRow(page: NotionPage): FlatIdeaRow {
   const properties = page.properties;
   if (!properties) {
     throw new NotionMappingError('Missing Notion page properties');
   }
 
-  const status = normalizeBookingStatus(getOptionalText(properties, 'status') ?? 'booked');
-  const checkIn = parseIsoOrPlaceholder(getOptionalText(properties, 'checkin_iso'), 'checkin_iso');
-  const checkOut = parseIsoOrPlaceholder(getOptionalText(properties, 'checkout_iso'), 'checkout_iso');
-
+  const scheduledAt = parseIsoOrPlaceholder(getOptionalText(properties, 'date_iso'), 'date_iso');
   const tripTitleFromRow = getOptionalText(properties, 'trip_title');
   const inferredTripByTitle = inferTripFromTitle(tripTitleFromRow);
-  const inferredTripByDate = inferTripFromDate(checkIn);
+  const inferredTripByDate = inferTripFromDate(scheduledAt);
   const tripIdFromRow = getOptionalText(properties, 'trip_id');
-  const tripId = tripIdFromRow ?? inferredTripByTitle?.tripId ?? inferredTripByDate?.tripId;
+  const relationTripLooksLikeNotionId = tripIdFromRow ? looksLikeNotionPageId(tripIdFromRow) : false;
+  const tripId =
+    relationTripLooksLikeNotionId
+      ? inferredTripByTitle?.tripId ?? inferredTripByDate?.tripId ?? tripIdFromRow
+      : tripIdFromRow ?? inferredTripByTitle?.tripId ?? inferredTripByDate?.tripId;
 
   if (!tripId) {
     const availableProperties = Object.keys(properties).join(', ');
@@ -429,71 +515,61 @@ function parseFlatHotelRow(page: NotionPage): FlatHotelRow {
     );
   }
 
-  const tripTitle = tripTitleFromRow ?? inferredTripByTitle?.tripTitle ?? inferredTripByDate?.tripTitle ?? tripId;
-  const hotelName = getOptionalText(properties, 'booking_label');
-  if (!hotelName) {
+  const bookingLabel = getOptionalText(properties, 'booking_label');
+  if (!bookingLabel) {
     throw new NotionMappingError('Missing required Notion property: booking_label');
   }
 
-  const confirmation = getOptionalText(properties, 'confirmation') ?? getOptionalText(properties, 'booking_id');
-  const bookingId = getOptionalText(properties, 'booking_id') ?? confirmation ?? page.id ?? `${tripId}-hotel-${normalizeBookingKey(hotelName)}`;
   const city = getOptionalText(properties, 'city');
+  const country = getOptionalText(properties, 'country');
   const address = getOptionalText(properties, 'address');
   const coordinatePair = normalizeCoordinatePair(
     getOptionalNumber(properties, 'latitude'),
     getOptionalNumber(properties, 'longitude')
   );
-  const roomType = getOptionalText(properties, 'room_type');
-  const provider = getOptionalText(properties, 'provider');
-  const nights = getOptionalText(properties, 'nights');
-  const checkoutLine = checkOut.dateLabel !== 'TBD'
-    ? `Checkout: ${checkOut.dateLabel}${checkOut.hasTime ? ` ${checkOut.timeLabel}` : ''}`
-    : null;
-  const notes = [
-    getOptionalText(properties, 'notes'),
-    roomType ? `Room: ${roomType}` : null,
-    provider ? `Booked via: ${provider}` : null,
-    nights ? `Nights: ${nights}` : null,
-    checkoutLine,
-  ]
-    .filter(Boolean)
-    .join(' | ');
+  const description = getOptionalText(properties, 'description');
+  const price = getOptionalNumber(properties, 'price');
+  const photoUrls = getOptionalFileUrls(properties, 'photos');
+  const bookingType = mapIdeaType(getOptionalText(properties, 'type'));
+  const status = normalizeBookingStatus(getOptionalText(properties, 'status'), getOptionalCheckbox(properties, 'status'));
+
+  const bookingId =
+    getOptionalText(properties, 'booking_id') ??
+    page.id ??
+    `${tripId}-${normalizeIdeaKey(bookingLabel)}-${scheduledAt.dateLabel}`;
 
   return {
     tripId,
-    tripTitle,
+    tripTitle: tripTitleFromRow ?? inferredTripByTitle?.tripTitle ?? inferredTripByDate?.tripTitle ?? tripId,
     tripEmoji: getOptionalText(properties, 'trip_emoji'),
     tripDateRange: getOptionalText(properties, 'trip_date_range'),
     bookingId,
-    bookingLabel: hotelName,
+    bookingLabel,
+    bookingType,
     status,
-    bookingRef: confirmation,
     city,
+    country,
     address,
     latitude: coordinatePair?.latitude,
     longitude: coordinatePair?.longitude,
-    roomType,
-    provider,
-    nights,
-    notes: notes || undefined,
-    checkIn,
-    checkOut,
+    description,
+    price,
+    photoUrls,
+    scheduledAt,
   };
 }
 
-function formatTripDateRange(rows: FlatHotelRow[]): string {
+function formatTripDateRange(rows: FlatIdeaRow[]): string {
   const datedRows = rows
-    .filter((row) => Number.isFinite(row.checkIn.epochMs))
-    .sort((a, b) => a.checkIn.epochMs - b.checkIn.epochMs);
+    .filter((row) => Number.isFinite(row.scheduledAt.epochMs))
+    .sort((a, b) => a.scheduledAt.epochMs - b.scheduledAt.epochMs);
 
   if (datedRows.length === 0) {
     return 'TBD';
   }
 
-  const first = datedRows[0].checkIn;
-  const last = datedRows[datedRows.length - 1].checkOut.epochMs !== Number.POSITIVE_INFINITY
-    ? datedRows[datedRows.length - 1].checkOut
-    : datedRows[datedRows.length - 1].checkIn;
+  const first = datedRows[0].scheduledAt;
+  const last = datedRows[datedRows.length - 1].scheduledAt;
 
   if (first.year !== last.year) {
     return `${monthShortNames[first.month - 1]} ${first.day}, ${first.year} – ${monthShortNames[last.month - 1]} ${last.day}, ${last.year}`;
@@ -506,11 +582,16 @@ function formatTripDateRange(rows: FlatHotelRow[]): string {
   return `${monthShortNames[first.month - 1]} ${first.day} – ${monthShortNames[last.month - 1]} ${last.day}, ${first.year}`;
 }
 
-function buildTripsFromRows(rows: FlatHotelRow[]): Trip[] {
-  const tripMap = new Map<string, { title: string; emoji?: string; dateRange?: string; rows: FlatHotelRow[] }>();
+function buildTripsFromRows(rows: FlatIdeaRow[]): Trip[] {
+  const tripMap = new Map<string, { title: string; emoji?: string; dateRange?: string; rows: FlatIdeaRow[] }>();
 
   for (const row of rows) {
-    const entry = tripMap.get(row.tripId) ?? { title: row.tripTitle, emoji: row.tripEmoji, dateRange: row.tripDateRange, rows: [] };
+    const entry = tripMap.get(row.tripId) ?? {
+      title: row.tripTitle,
+      emoji: row.tripEmoji,
+      dateRange: row.tripDateRange,
+      rows: [],
+    };
     entry.rows.push(row);
     tripMap.set(row.tripId, entry);
   }
@@ -519,46 +600,43 @@ function buildTripsFromRows(rows: FlatHotelRow[]): Trip[] {
 
   for (const [tripId, tripEntry] of tripMap.entries()) {
     const bookings: Booking[] = tripEntry.rows
-      .map((row) => ({
-        id: row.bookingId,
-        type: 'hotel' as const,
-        status: row.status,
-        label: row.bookingLabel,
-        legs: [],
-        ...(row.bookingRef ? { bookingRef: row.bookingRef } : {}),
-        ...(row.checkIn.dateLabel !== 'TBD' ? { activityDate: row.checkIn.dateLabel } : {}),
-        ...(row.checkIn.hasTime ? { activityTime: row.checkIn.timeLabel } : {}),
-        ...([row.city, row.address].filter(Boolean).length > 0
-          ? { activityLocation: [row.city, row.address].filter(Boolean).join(' · ') }
-          : {}),
-        ...(row.latitude !== undefined && row.longitude !== undefined
-          ? { latitude: row.latitude, longitude: row.longitude }
-          : {}),
-        ...(row.notes ? { notes: row.notes } : {}),
-        hotelStay: {
-          name: row.bookingLabel,
-          ...(row.city ? { city: row.city } : {}),
-          ...(row.address ? { address: row.address } : {}),
-          ...(row.checkIn.dateLabel !== 'TBD' ? { checkInDate: row.checkIn.dateLabel } : {}),
-          ...(row.checkIn.hasTime ? { checkInTime: row.checkIn.timeLabel } : {}),
-          ...(row.checkOut.dateLabel !== 'TBD' ? { checkOutDate: row.checkOut.dateLabel } : {}),
-          ...(row.checkOut.hasTime ? { checkOutTime: row.checkOut.timeLabel } : {}),
-          ...(row.bookingRef ? { confirmationNumber: row.bookingRef } : {}),
-          ...(row.roomType ? { roomType: row.roomType } : {}),
-          ...(row.provider ? { provider: row.provider } : {}),
-          ...(row.nights ? { nights: row.nights } : {}),
-        },
-      }))
+      .map((row) => {
+        const locationParts = [row.address, row.city, row.country].filter(Boolean);
+        const formattedPrice = row.price !== undefined ? `$${Number(row.price).toFixed(2).replace(/\.00$/, '')}` : undefined;
+        const notes = [
+          row.description,
+          formattedPrice ? `Price: ${formattedPrice}` : undefined,
+          row.photoUrls.length > 1 ? `Photos: ${row.photoUrls.slice(1).join(', ')}` : undefined,
+        ]
+          .filter(Boolean)
+          .join(' | ');
+
+        return {
+          id: row.bookingId,
+          type: row.bookingType,
+          status: row.status,
+          label: row.bookingLabel,
+          legs: [],
+          ...(row.scheduledAt.dateLabel !== 'TBD' ? { activityDate: row.scheduledAt.dateLabel } : {}),
+          ...(row.scheduledAt.hasTime ? { activityTime: row.scheduledAt.timeLabel } : {}),
+          ...(locationParts.length > 0 ? { activityLocation: locationParts.join(', ') } : {}),
+          ...(row.latitude !== undefined && row.longitude !== undefined
+            ? { latitude: row.latitude, longitude: row.longitude }
+            : {}),
+          ...(notes ? { notes } : {}),
+          ...(row.photoUrls[0] ? { imageUrl: row.photoUrls[0] } : {}),
+        } as Booking;
+      })
       .sort((a, b) => {
-        const aEpoch = tripEntry.rows.find((row) => row.bookingId === a.id)?.checkIn.epochMs ?? Number.POSITIVE_INFINITY;
-        const bEpoch = tripEntry.rows.find((row) => row.bookingId === b.id)?.checkIn.epochMs ?? Number.POSITIVE_INFINITY;
+        const aEpoch = tripEntry.rows.find((row) => row.bookingId === a.id)?.scheduledAt.epochMs ?? Number.POSITIVE_INFINITY;
+        const bEpoch = tripEntry.rows.find((row) => row.bookingId === b.id)?.scheduledAt.epochMs ?? Number.POSITIVE_INFINITY;
         return aEpoch - bEpoch;
       });
 
     trips.push({
       id: tripId,
       title: tripEntry.title,
-      emoji: tripEntry.emoji || '🏨',
+      emoji: tripEntry.emoji || '✨',
       dateRange: tripEntry.dateRange || formatTripDateRange(tripEntry.rows),
       bookings,
     });
@@ -567,7 +645,7 @@ function buildTripsFromRows(rows: FlatHotelRow[]): Trip[] {
   return trips.sort((a, b) => a.title.localeCompare(b.title));
 }
 
-export async function fetchNotionHotelPages(params: {
+export async function fetchNotionIdeaPages(params: {
   notionToken: string;
   databaseId: string;
   fetchImpl?: typeof fetch;
@@ -576,16 +654,16 @@ export async function fetchNotionHotelPages(params: {
   return pages as NotionPage[];
 }
 
-export function mapNotionHotelPagesToTripsWithDiagnostics(pages: NotionPage[]): {
+export function mapNotionIdeaPagesToTripsWithDiagnostics(pages: NotionPage[]): {
   trips: Trip[];
   diagnostics: MappingDiagnostics;
 } {
-  const rows: FlatHotelRow[] = [];
+  const rows: FlatIdeaRow[] = [];
   const rowErrors: string[] = [];
 
   pages.forEach((page, index) => {
     try {
-      rows.push(parseFlatHotelRow(page));
+      rows.push(parseFlatIdeaRow(page));
     } catch (error) {
       if (error instanceof NotionMappingError) {
         const details = error.details ? ` (${error.details})` : '';
@@ -603,14 +681,14 @@ export function mapNotionHotelPagesToTripsWithDiagnostics(pages: NotionPage[]): 
 
   if (rows.length === 0) {
     throw new NotionMappingError(
-      'No valid hotel rows found in Notion',
+      'No valid idea rows found in Notion',
       rowErrors.length > 0 ? rowErrors.slice(0, 3).join(' | ') : undefined
     );
   }
 
   if (rowErrors.length > 0 && process.env.NODE_ENV !== 'test') {
     // eslint-disable-next-line no-console
-    console.warn(`Skipped ${rowErrors.length} invalid Notion hotel row(s).`, rowErrors.slice(0, 5));
+    console.warn(`Skipped ${rowErrors.length} invalid Notion idea row(s).`, rowErrors.slice(0, 5));
   }
 
   return {
@@ -624,6 +702,6 @@ export function mapNotionHotelPagesToTripsWithDiagnostics(pages: NotionPage[]): 
   };
 }
 
-export function mapNotionHotelPagesToTrips(pages: NotionPage[]): Trip[] {
-  return mapNotionHotelPagesToTripsWithDiagnostics(pages).trips;
+export function mapNotionIdeaPagesToTrips(pages: NotionPage[]): Trip[] {
+  return mapNotionIdeaPagesToTripsWithDiagnostics(pages).trips;
 }

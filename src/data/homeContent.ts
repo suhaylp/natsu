@@ -13,7 +13,6 @@ export const SECRET_GREETINGS: string[] = [
   'HI MY LOVE',
   'MUAHAHAHAHAH',
   'OO EH OO EH, OO EH OO EH'
-  // add more here
 ];
 
 export const TODAY_MEMORY = {

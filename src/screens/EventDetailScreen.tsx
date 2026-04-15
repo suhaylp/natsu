@@ -1,4 +1,4 @@
-import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
+import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
@@ -50,6 +50,15 @@ function InfoRow({ label, value, isLast = false }: InfoRowProps) {
   );
 }
 
+function extractImageUrlFromText(value?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const match = value.match(/https?:\/\/\S+\.(?:png|jpe?g|webp|gif)/i);
+  return match?.[0];
+}
+
 export function EventDetailScreen({ navigation, route }: Props) {
   const { trips } = useTripsData();
   const trip = route.params.tripId ? trips.find((item) => item.id === route.params.tripId) : undefined;
@@ -73,6 +82,7 @@ export function EventDetailScreen({ navigation, route }: Props) {
     : route.params.dateLabel ?? 'TBD';
   const location = isBookingEvent ? booking.activityLocation ?? 'Location TBD' : route.params.location ?? 'Location TBD';
   const notes = isBookingEvent ? booking.notes : route.params.notes;
+  const eventImageUrl = isBookingEvent ? booking.imageUrl ?? extractImageUrlFromText(booking.notes) : undefined;
 
   return (
     <LinearGradient
@@ -143,6 +153,19 @@ export function EventDetailScreen({ navigation, route }: Props) {
             >
               {trip?.title ?? 'Upcoming event'}
             </Text>
+
+            {eventImageUrl ? (
+              <Image
+                source={{ uri: eventImageUrl }}
+                resizeMode="cover"
+                style={{
+                  width: '100%',
+                  height: 180,
+                  borderRadius: 12,
+                  marginBottom: theme.spacing.lg,
+                }}
+              />
+            ) : null}
 
             <InfoRow label="Status" value={status} />
             <InfoRow label="When" value={dateTimeLabel} />

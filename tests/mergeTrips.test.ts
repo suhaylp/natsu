@@ -244,4 +244,49 @@ describe('mergeTripsWithRemoteFlights', () => {
     const merged = mergeTripsWithRemoteFlights(localTrips, remoteTrips);
     expect(merged[0].bookings.map((booking) => booking.id)).toEqual(['hotel-remote', 'event-local']);
   });
+
+  it('keeps local ideas and adds remote ideas from notion sync', () => {
+    const localTrips: Trip[] = [
+      {
+        id: 'sea-japan',
+        title: 'Asia Backpacking',
+        emoji: '🎒🌏',
+        dateRange: 'Jul 15 – Aug 24, 2026',
+        bookings: [
+          {
+            id: 'local-idea-1',
+            type: 'event',
+            status: 'not_booked',
+            label: 'Local idea',
+            legs: [],
+            activityDate: 'Jul 20',
+          },
+        ],
+      },
+    ];
+
+    const remoteTrips: Trip[] = [
+      {
+        id: 'notion-trip-1',
+        title: 'Asia Backpacking',
+        emoji: '✨',
+        dateRange: 'Jul 15 – Aug 24, 2026',
+        bookings: [
+          {
+            id: 'notion-idea-1',
+            type: 'event',
+            status: 'booked',
+            label: 'Notion idea',
+            legs: [],
+            activityDate: 'Jul 26',
+          },
+        ],
+      },
+    ];
+
+    const merged = mergeTripsWithRemoteFlights(localTrips, remoteTrips);
+    expect(merged).toHaveLength(1);
+    expect(merged[0].id).toBe('sea-japan');
+    expect(merged[0].bookings.map((booking) => booking.id)).toEqual(['local-idea-1', 'notion-idea-1']);
+  });
 });

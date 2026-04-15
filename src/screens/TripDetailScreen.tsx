@@ -1,553 +1,944 @@
-// ── screens/TripDetailScreen.tsx ──
-import { useState } from 'react';
-import { Image, ScrollView, Text, TouchableOpacity, View, useWindowDimensions } from 'react-native';
+import { useEffect, useMemo, useState } from 'react';
+import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { StackScreenProps } from '@react-navigation/stack';
-import { GlassCard } from '../components/GlassCard';
-import { ConnectedLegs } from '../components/ConnectedLegs';
+import { TripMap } from '../components/tripOverview/TripMap';
 import { useTripsData } from '../data/TripsDataContext';
-import { tripPhotos } from '../data/tripPhotos';
-import { type Booking } from '../data/trips';
-import { theme } from '../theme/theme';
+import type { Booking, BookingType, Trip } from '../data/trips';
 import type { RootStackParamList } from '../navigation/AppNavigator';
+import type { MapPin, RouteSegment, StopActivity } from '../components/tripOverview/types';
 
 type Props = StackScreenProps<RootStackParamList, 'TripDetail'>;
 
-const monthMap: Record<string, number> = {
-  Jan: 0,
-  Feb: 1,
-  Mar: 2,
-  Apr: 3,
-  May: 4,
-  Jun: 5,
-  Jul: 6,
-  Aug: 7,
-  Sep: 8,
-  Oct: 9,
-  Nov: 10,
-  Dec: 11,
+type Coordinates = {
+  latitude: number;
+  longitude: number;
 };
 
-const weekdayNames = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'] as const;
-const timelineLineLeft = theme.spacing.xl;
-const timelineDotSize = theme.spacing.md - 2;
-const timelineDotRadius = timelineDotSize / 2;
-const timelineDotLeft = -32;
-const timelineDotTop = theme.spacing.xl;
-const bookingTypeMeta: Record<Booking['type'], { icon: string; label: string }> = {
-  flight: { icon: '✈️', label: 'Flight' },
-  hotel: { icon: '🏨', label: 'Hotel stay' },
-  train: { icon: '🚆', label: 'Train ride' },
-  bus: { icon: '🚌', label: 'Bus ride' },
-  event: { icon: '📍', label: 'Event' },
-  concert: { icon: '🎤', label: 'Concert' },
-  festival: { icon: '🎪', label: 'Festival' },
-  ferry: { icon: '⛴️', label: 'Ferry ride' },
-  'food-tour': { icon: '🍜', label: 'Food tour' },
+type MapDataset = {
+  pins: MapPin[];
+  routeSegments: RouteSegment[];
 };
 
-function getDayDateLabel(dateToken?: string): string {
-  if (!dateToken) {
-    return 'TBD';
+const colors = {
+  accent: '#1e3d2f',
+  topCard: 'rgba(232,240,233,0.92)',
+};
+
+const airportCoordinates: Record<string, Coordinates> = {
+  YVR: { latitude: 49.1967, longitude: -123.1815 },
+  HND: { latitude: 35.5494, longitude: 139.7798 },
+  NRT: { latitude: 35.772, longitude: 140.3929 },
+  SIN: { latitude: 1.3644, longitude: 103.9915 },
+  BKK: { latitude: 13.69, longitude: 100.7501 },
+  CNX: { latitude: 18.7668, longitude: 98.9626 },
+  HAN: { latitude: 21.2187, longitude: 105.8042 },
+  SGN: { latitude: 10.8188, longitude: 106.6519 },
+  YOW: { latitude: 45.3225, longitude: -75.6692 },
+  YUL: { latitude: 45.4706, longitude: -73.7408 },
+  YHU: { latitude: 45.5175, longitude: -73.4169 },
+  YYC: { latitude: 51.1139, longitude: -114.02 },
+};
+
+const cityCoordinates: Record<string, Coordinates> = {
+  vancouver: { latitude: 49.2827, longitude: -123.1207 },
+  tokyo: { latitude: 35.6762, longitude: 139.6503 },
+  singapore: { latitude: 1.3521, longitude: 103.8198 },
+  bangkok: { latitude: 13.7563, longitude: 100.5018 },
+  chiangmai: { latitude: 18.7883, longitude: 98.9853 },
+  hanoi: { latitude: 21.0278, longitude: 105.8342 },
+  hochiminhcity: { latitude: 10.8231, longitude: 106.6297 },
+  saigon: { latitude: 10.8231, longitude: 106.6297 },
+  montreal: { latitude: 45.5017, longitude: -73.5673 },
+  ottawa: { latitude: 45.4215, longitude: -75.6972 },
+  calgary: { latitude: 51.0447, longitude: -114.0719 },
+};
+
+const countryCoordinates: Record<string, Coordinates> = {
+  canada: { latitude: 56.1304, longitude: -106.3468 },
+  japan: { latitude: 36.2048, longitude: 138.2529 },
+  singapore: { latitude: 1.3521, longitude: 103.8198 },
+  thailand: { latitude: 15.87, longitude: 100.9925 },
+  vietnam: { latitude: 14.0583, longitude: 108.2772 },
+};
+
+const airportCountryByCode: Record<string, string> = {
+  YVR: 'Canada',
+  YOW: 'Canada',
+  YUL: 'Canada',
+  YHU: 'Canada',
+  YYC: 'Canada',
+  HND: 'Japan',
+  NRT: 'Japan',
+  SIN: 'Singapore',
+  BKK: 'Thailand',
+  CNX: 'Thailand',
+  HAN: 'Vietnam',
+  SGN: 'Vietnam',
+};
+
+const cityCountryByKey: Record<string, string> = {
+  vancouver: 'Canada',
+  ottawa: 'Canada',
+  montreal: 'Canada',
+  calgary: 'Canada',
+  tokyo: 'Japan',
+  singapore: 'Singapore',
+  bangkok: 'Thailand',
+  chiangmai: 'Thailand',
+  hanoi: 'Vietnam',
+  hochiminhcity: 'Vietnam',
+  saigon: 'Vietnam',
+};
+
+const cityAliases: Record<string, string> = {
+  hcmc: 'Ho Chi Minh City',
+  'ho chi minh': 'Ho Chi Minh City',
+  'ho chi minh city': 'Ho Chi Minh City',
+  saigon: 'Ho Chi Minh City',
+  'tokyo haneda': 'Tokyo',
+  haneda: 'Tokyo',
+  narita: 'Tokyo',
+  'chiang mai': 'Chiang Mai',
+};
+
+const iconByBookingType: Record<BookingType, string> = {
+  flight: '✈',
+  hotel: '⌂',
+  train: '🚆',
+  bus: '🚌',
+  event: '✦',
+  concert: '✦',
+  festival: '✦',
+  ferry: '⛴',
+  'food-tour': '✦',
+};
+
+function isFlightBookingType(type: BookingType): boolean {
+  return type === 'flight';
+}
+
+function isHotelBookingType(type: BookingType): boolean {
+  return type === 'hotel';
+}
+
+function isIdeaBookingType(type: BookingType): boolean {
+  return type === 'event' || type === 'concert' || type === 'festival' || type === 'food-tour';
+}
+
+function toTitleCase(value: string): string {
+  if (value.length <= 4 && value.toUpperCase() === value) {
+    return value;
   }
 
-  try {
-    const [monthToken, dayToken] = dateToken.trim().split(' ');
-    const month = monthMap[monthToken];
-    const day = Number(dayToken);
+  return value
+    .toLowerCase()
+    .split(' ')
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
 
-    if (month === undefined || Number.isNaN(day)) {
-      return dateToken.toUpperCase();
+function normalizeCityName(value: string): string {
+  const trimmed = value.trim();
+  const aliasKey = trimmed.toLowerCase().replace(/[^a-z0-9\s]/g, '').replace(/\s+/g, ' ');
+
+  return cityAliases[aliasKey] ?? toTitleCase(trimmed);
+}
+
+function normalizeCityKey(value: string): string {
+  return normalizeCityName(value).toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function normalizeCountryKey(value: string): string {
+  return value.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function resolveCountryName(options: { code?: string; city?: string; location?: string }): string | undefined {
+  const code = options.code?.trim().toUpperCase();
+  if (code && airportCountryByCode[code]) {
+    return airportCountryByCode[code];
+  }
+
+  const city = options.city?.trim();
+  if (city) {
+    const byCity = cityCountryByKey[normalizeCityKey(city)];
+    if (byCity) {
+      return byCity;
+    }
+  }
+
+  if (options.location) {
+    const locationParts = options.location
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    for (const part of locationParts.reverse()) {
+      const byCountryKey = countryCoordinates[normalizeCountryKey(part)];
+      if (byCountryKey) {
+        return toTitleCase(part);
+      }
+
+      const byCity = cityCountryByKey[normalizeCityKey(part)];
+      if (byCity) {
+        return byCity;
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function resolveCountryCoordinates(country?: string): Coordinates | null {
+  if (!country) {
+    return null;
+  }
+
+  return countryCoordinates[normalizeCountryKey(country)] ?? null;
+}
+
+function maybeExtractPrice(notes?: string): string | undefined {
+  if (!notes) {
+    return undefined;
+  }
+
+  const match = notes.match(/([$€£]\s?\d+(?:\.\d{2})?)/);
+  return match?.[1]?.replace(/\s+/g, '');
+}
+
+function maybeExtractNotionUrl(notes?: string): string | undefined {
+  if (!notes) {
+    return undefined;
+  }
+
+  const match = notes.match(/https?:\/\/\S+/);
+  return match?.[0];
+}
+
+function getCityFromLocation(location?: string): string | undefined {
+  if (!location) {
+    return undefined;
+  }
+
+  const firstSegment = location.split('·')[0]?.split('|')[0]?.split(',')[0]?.trim();
+  if (!firstSegment) {
+    return undefined;
+  }
+
+  return normalizeCityName(firstSegment);
+}
+
+function parseCoordinatesFromText(value?: string): Coordinates | null {
+  if (!value) {
+    return null;
+  }
+
+  const match = value.match(/(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/);
+  if (!match) {
+    return null;
+  }
+
+  const latitude = Number(match[1]);
+  const longitude = Number(match[2]);
+
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) {
+    return null;
+  }
+
+  if (Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {
+    return null;
+  }
+
+  return { latitude, longitude };
+}
+
+function resolveCoordinates(options: {
+  code?: string;
+  city?: string;
+  location?: string;
+  latitude?: number;
+  longitude?: number;
+}): Coordinates | null {
+  if (
+    Number.isFinite(options.latitude) &&
+    Number.isFinite(options.longitude) &&
+    Math.abs(options.latitude as number) <= 90 &&
+    Math.abs(options.longitude as number) <= 180
+  ) {
+    return {
+      latitude: options.latitude as number,
+      longitude: options.longitude as number,
+    };
+  }
+
+  const code = options.code?.trim().toUpperCase();
+  if (code && airportCoordinates[code]) {
+    return airportCoordinates[code];
+  }
+
+  const directCoordinate = parseCoordinatesFromText(options.location);
+  if (directCoordinate) {
+    return directCoordinate;
+  }
+
+  const candidateCities = [
+    options.city,
+    getCityFromLocation(options.location),
+    options.location?.split(',')[0],
+    options.location?.split('·')[0],
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value));
+
+  for (const candidate of candidateCities) {
+    const normalized = normalizeCityKey(candidate);
+    const found = cityCoordinates[normalized];
+    if (found) {
+      return found;
+    }
+  }
+
+  return null;
+}
+
+function shortLabel(value: string, max = 12): string {
+  if (value.length <= max) {
+    return value;
+  }
+
+  return `${value.slice(0, max - 1)}…`;
+}
+
+function addPin(
+  pinMap: Map<string, MapPin>,
+  coordinates: Coordinates,
+  payload: {
+    title: string;
+    label: string;
+    status: Booking['status'];
+    icon: string;
+    iataCode?: string;
+    activity: StopActivity;
+  }
+): void {
+  const key = `${coordinates.latitude.toFixed(3)}:${coordinates.longitude.toFixed(3)}:${payload.title.toLowerCase()}`;
+  const existing = pinMap.get(key);
+
+  if (existing) {
+    existing.activities.push(payload.activity);
+
+    if (existing.status === 'not_booked' && payload.status === 'booked') {
+      existing.status = 'booked';
+      existing.variant = 'confirmed';
+      existing.icon = payload.icon;
     }
 
-    const date = new Date(2026, month, day);
-    const weekday = weekdayNames[date.getDay()];
+    if (!existing.iataCode && payload.iataCode) {
+      existing.iataCode = payload.iataCode;
+    }
 
-    return `${weekday}, ${monthToken.toUpperCase()} ${day}`;
-  } catch {
-    return dateToken.toUpperCase();
+    return;
   }
+
+  pinMap.set(key, {
+    id: `pin-${pinMap.size + 1}`,
+    cityKey: payload.activity.cityKey,
+    title: payload.title,
+    label: payload.label,
+    latitude: coordinates.latitude,
+    longitude: coordinates.longitude,
+    variant: payload.status === 'booked' ? 'confirmed' : 'idea',
+    icon: payload.icon,
+    status: payload.status,
+    iataCode: payload.iataCode,
+    activities: [payload.activity],
+  });
+}
+
+function finalizePins(pinMap: Map<string, MapPin>): MapPin[] {
+  return Array.from(pinMap.values())
+    .map((pin) => ({
+      ...pin,
+      activities: [...pin.activities].sort((a, b) => a.order - b.order),
+    }))
+    .sort((a, b) => (a.activities[0]?.order ?? 0) - (b.activities[0]?.order ?? 0));
+}
+
+function buildFlightsMapData(trip: Trip): MapDataset {
+  const pinMap = new Map<string, MapPin>();
+  const routeSegments: RouteSegment[] = [];
+
+  trip.bookings.forEach((booking, bookingIndex) => {
+    if (!isFlightBookingType(booking.type)) {
+      return;
+    }
+
+    const baseOrder = bookingIndex * 100;
+    const notionUrl = maybeExtractNotionUrl(booking.notes);
+    const priceLabel = maybeExtractPrice(booking.notes);
+
+    if (booking.legs.length > 0) {
+      booking.legs.forEach((leg, legIndex) => {
+        const fromCity = normalizeCityName(leg.fromCity || leg.fromCode || trip.title);
+        const toCity = normalizeCityName(leg.toCity || leg.toCode || trip.title);
+        const dateLabel =
+          leg.departureDate && leg.arrivalDate && leg.departureDate !== leg.arrivalDate
+            ? `${leg.departureDate} → ${leg.arrivalDate}`
+            : leg.departureDate || leg.arrivalDate || 'TBD';
+        const timeLabel =
+          leg.departureTime && leg.arrivalTime && leg.departureTime !== leg.arrivalTime
+            ? `${leg.departureTime} → ${leg.arrivalTime}`
+            : leg.departureTime || leg.arrivalTime;
+        const fromCountry = resolveCountryName({ code: leg.fromCode, city: fromCity }) ?? fromCity;
+        const toCountry = resolveCountryName({ code: leg.toCode, city: toCity }) ?? toCity;
+        const fromCoords =
+          resolveCoordinates({ code: leg.fromCode, city: leg.fromCity }) ?? resolveCountryCoordinates(fromCountry);
+        const toCoords =
+          resolveCoordinates({ code: leg.toCode, city: leg.toCity }) ?? resolveCountryCoordinates(toCountry);
+        const departureTitle = leg.fromCode ? `${fromCity} (${leg.fromCode})` : fromCity;
+        const destinationTitle = leg.toCode ? `${toCity} (${leg.toCode})` : toCity;
+
+        const baseLegActivity: Omit<
+          StopActivity,
+          'id' | 'city' | 'country' | 'cityKey' | 'iataCode' | 'addressLabel' | 'order'
+        > = {
+          bookingId: booking.id,
+          bookingType: booking.type,
+          status: booking.status,
+          icon: iconByBookingType[booking.type],
+          name: `${fromCity} → ${toCity}`,
+          dateLabel,
+          timeLabel,
+          priceLabel,
+          refLabel: booking.bookingRef,
+          notionUrl,
+          fromLatitude: fromCoords?.latitude,
+          fromLongitude: fromCoords?.longitude,
+          toLatitude: toCoords?.latitude,
+          toLongitude: toCoords?.longitude,
+        };
+
+        if (fromCoords) {
+          const departureActivity: StopActivity = {
+            ...baseLegActivity,
+            id: `${booking.id}-leg-${legIndex}-from`,
+            city: fromCity,
+            country: fromCountry,
+            cityKey: normalizeCityKey(fromCity),
+            iataCode: leg.fromCode,
+            addressLabel: `${fromCity} ${leg.fromCode || ''}`.trim(),
+            order: baseOrder + legIndex * 2,
+          };
+
+          addPin(pinMap, fromCoords, {
+            title: departureTitle,
+            label: shortLabel(departureTitle, 13),
+            status: booking.status,
+            icon: iconByBookingType[booking.type],
+            iataCode: leg.fromCode,
+            activity: departureActivity,
+          });
+        }
+
+        if (toCoords) {
+          const arrivalActivity: StopActivity = {
+            ...baseLegActivity,
+            id: `${booking.id}-leg-${legIndex}-to`,
+            city: toCity,
+            country: toCountry,
+            cityKey: normalizeCityKey(toCity),
+            iataCode: leg.toCode,
+            addressLabel: `${toCity} ${leg.toCode || ''}`.trim(),
+            order: baseOrder + legIndex * 2 + 1,
+          };
+
+          addPin(pinMap, toCoords, {
+            title: destinationTitle,
+            label: shortLabel(destinationTitle, 13),
+            status: booking.status,
+            icon: iconByBookingType[booking.type],
+            iataCode: leg.toCode,
+            activity: arrivalActivity,
+          });
+        }
+
+        if (
+          fromCoords &&
+          toCoords &&
+          (Math.abs(fromCoords.latitude - toCoords.latitude) > 0.001 ||
+            Math.abs(fromCoords.longitude - toCoords.longitude) > 0.001)
+        ) {
+          routeSegments.push({
+            id: `route-${booking.id}-${legIndex}`,
+            fromLatitude: fromCoords.latitude,
+            fromLongitude: fromCoords.longitude,
+            toLatitude: toCoords.latitude,
+            toLongitude: toCoords.longitude,
+          });
+        }
+      });
+
+      return;
+    }
+
+    if (booking.legs.length === 0) {
+      return;
+    }
+  });
+
+  return {
+    pins: finalizePins(pinMap),
+    routeSegments,
+  };
+}
+
+function buildHotelsMapData(trip: Trip): MapDataset {
+  const pinMap = new Map<string, MapPin>();
+
+  trip.bookings.forEach((booking, bookingIndex) => {
+    if (!isHotelBookingType(booking.type)) {
+      return;
+    }
+
+    const baseOrder = bookingIndex * 100;
+    const notionUrl = maybeExtractNotionUrl(booking.notes);
+    const priceLabel = maybeExtractPrice(booking.notes);
+    const locationCity = normalizeCityName(
+      booking.hotelStay?.city ?? getCityFromLocation(booking.activityLocation) ?? trip.title
+    );
+    const country =
+      resolveCountryName({
+        city: locationCity,
+        location: booking.activityLocation ?? booking.hotelStay?.address,
+      }) ?? locationCity;
+    const addressLabel = booking.activityLocation ?? booking.hotelStay?.address;
+    const locationCoords =
+      resolveCoordinates({
+        city: locationCity,
+        location: addressLabel,
+        latitude: booking.latitude,
+        longitude: booking.longitude,
+      }) ?? resolveCountryCoordinates(country);
+
+    if (!locationCoords) {
+      return;
+    }
+
+    const activity: StopActivity = {
+      id: `${booking.id}-hotel`,
+      bookingId: booking.id,
+      bookingType: booking.type,
+      status: booking.status,
+      icon: iconByBookingType[booking.type],
+      name: booking.hotelStay?.name ?? booking.label,
+      city: locationCity,
+      country,
+      cityKey: normalizeCityKey(locationCity),
+      dateLabel: booking.hotelStay?.checkInDate ?? booking.activityDate ?? 'TBD',
+      timeLabel: booking.hotelStay?.checkInTime ?? booking.activityTime,
+      priceLabel,
+      refLabel: booking.bookingRef ?? booking.hotelStay?.confirmationNumber,
+      addressLabel,
+      notionUrl,
+      order: baseOrder,
+    };
+
+    addPin(pinMap, locationCoords, {
+      title: locationCity,
+      label: shortLabel(locationCity, 13),
+      status: booking.status,
+      icon: iconByBookingType[booking.type],
+      activity,
+    });
+  });
+
+  return {
+    pins: finalizePins(pinMap),
+    routeSegments: [],
+  };
+}
+
+function buildIdeasMapData(trip: Trip): MapDataset {
+  const pinMap = new Map<string, MapPin>();
+
+  trip.bookings.forEach((booking, bookingIndex) => {
+    if (!isIdeaBookingType(booking.type)) {
+      return;
+    }
+
+    const baseOrder = bookingIndex * 100;
+    const notionUrl = maybeExtractNotionUrl(booking.notes);
+    const priceLabel = maybeExtractPrice(booking.notes);
+
+    const city = normalizeCityName(
+      booking.hotelStay?.city ??
+        getCityFromLocation(booking.hotelStay?.address ?? booking.activityLocation) ??
+        booking.legs[booking.legs.length - 1]?.toCity ??
+        trip.title
+    );
+    const country =
+      resolveCountryName({
+        code: booking.legs[booking.legs.length - 1]?.toCode,
+        city,
+        location: booking.activityLocation ?? booking.hotelStay?.address,
+      }) ?? city;
+    const addressLabel = booking.activityLocation ?? booking.hotelStay?.address;
+    const coordinates =
+      resolveCoordinates({
+        city,
+        location: addressLabel,
+        latitude: booking.latitude,
+        longitude: booking.longitude,
+      }) ?? resolveCountryCoordinates(country);
+    if (!coordinates) {
+      return;
+    }
+
+    const activity: StopActivity = {
+      id: `${booking.id}-idea`,
+      bookingId: booking.id,
+      bookingType: booking.type,
+      status: booking.status,
+      icon: iconByBookingType[booking.type],
+      name: booking.hotelStay?.name ?? booking.label,
+      city,
+      country,
+      cityKey: normalizeCityKey(city),
+      dateLabel: booking.hotelStay?.checkInDate ?? booking.activityDate ?? booking.legs[0]?.departureDate ?? 'TBD',
+      timeLabel: booking.hotelStay?.checkInTime ?? booking.activityTime ?? booking.legs[0]?.departureTime,
+      priceLabel,
+      refLabel: booking.bookingRef ?? booking.hotelStay?.confirmationNumber,
+      addressLabel,
+      notionUrl,
+      order: baseOrder,
+    };
+
+    addPin(pinMap, coordinates, {
+      title: city,
+      label: shortLabel(city, 13),
+      status: booking.status,
+      icon: iconByBookingType[booking.type],
+      activity,
+    });
+  });
+
+  return {
+    pins: finalizePins(pinMap),
+    routeSegments: [],
+  };
+}
+
+function buildCombinedMapData(trip: Trip): MapDataset {
+  const flights = buildFlightsMapData(trip);
+  const hotels = buildHotelsMapData(trip);
+  const ideas = buildIdeasMapData(trip);
+
+  const pinMap = new Map<string, MapPin>();
+
+  [...flights.pins, ...hotels.pins, ...ideas.pins].forEach((pin) => {
+    pin.activities.forEach((activity) => {
+      addPin(
+        pinMap,
+        { latitude: pin.latitude, longitude: pin.longitude },
+        {
+          title: pin.title,
+          label: pin.label,
+          status: activity.status,
+          icon: activity.icon,
+          iataCode: activity.iataCode,
+          activity,
+        }
+      );
+    });
+  });
+
+  return {
+    pins: finalizePins(pinMap),
+    routeSegments: flights.routeSegments,
+  };
 }
 
 export function TripDetailScreen({ navigation, route }: Props) {
   const { trips } = useTripsData();
   const trip = trips.find((item) => item.id === route.params.tripId);
-  const [activePhotoIndex, setActivePhotoIndex] = useState(0);
-  const { width } = useWindowDimensions();
-  const carouselWidth = width - theme.spacing.xl * 2;
+  const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
+
+  const mapData = useMemo(() => (trip ? buildCombinedMapData(trip) : { pins: [], routeSegments: [] }), [trip]);
+
+  useEffect(() => {
+    if (mapData.pins.length === 0) {
+      setSelectedPinId(null);
+      return;
+    }
+
+    setSelectedPinId((previous) => (previous && mapData.pins.some((pin) => pin.id === previous) ? previous : null));
+  }, [mapData.pins]);
+
+  const selectedPin = useMemo(() => {
+    if (!selectedPinId) {
+      return null;
+    }
+
+    return mapData.pins.find((pin) => pin.id === selectedPinId) ?? null;
+  }, [mapData.pins, selectedPinId]);
+
+  const focusedActivity = useMemo(() => {
+    if (!selectedPin) {
+      return null;
+    }
+
+    return selectedPin.activities.find((activity) => activity.bookingType === 'flight') ?? selectedPin.activities[0] ?? null;
+  }, [selectedPin]);
+
+  const openActivityDetails = (activity: StopActivity) => {
+    if (activity.bookingType === 'flight') {
+      navigation.navigate('FlightDetail', {
+        tripId: trip.id,
+        flightId: activity.bookingId,
+      });
+      return;
+    }
+
+    if (activity.bookingType === 'hotel') {
+      navigation.navigate('HotelDetail', {
+        tripId: trip.id,
+        bookingId: activity.bookingId,
+      });
+      return;
+    }
+
+    navigation.navigate('EventDetail', {
+      tripId: trip.id,
+      bookingId: activity.bookingId,
+    });
+  };
+
+  const bottomCardPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_, gestureState) =>
+          Math.abs(gestureState.dy) > 8 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
+        onPanResponderRelease: (_, gestureState) => {
+          if (gestureState.dy < -28 && focusedActivity) {
+            openActivityDetails(focusedActivity);
+          }
+        },
+      }),
+    [focusedActivity]
+  );
 
   if (!trip) {
     return (
-      <LinearGradient
-        colors={[theme.colors.backgroundGradientStart, theme.colors.backgroundGradientEnd]}
-        style={{ flex: 1 }}
-      >
-        <SafeAreaView style={{ flex: 1 }}>
-          <StatusBar style="dark" />
-          <View
-            style={{
-              paddingHorizontal: theme.spacing.xxl,
-              paddingTop: theme.spacing.sm,
-              paddingBottom: theme.spacing.lg,
-            }}
-          >
-            <TouchableOpacity
-              activeOpacity={0.75}
-              onPress={() => navigation.goBack()}
-              style={{
-                alignSelf: 'flex-start',
-                paddingRight: theme.spacing.md,
-                paddingVertical: theme.spacing.xs,
-              }}
-            >
-              <Text style={{ color: theme.colors.textPrimary, fontSize: 32, lineHeight: 32 }}>‹</Text>
-            </TouchableOpacity>
-            <Text
-              style={{
-                fontSize: 32,
-                fontWeight: '500',
-                color: theme.colors.textPrimary,
-                lineHeight: 36,
-                textAlign: 'left',
-              }}
-            >
-              Trip
-            </Text>
-          </View>
-
-          <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: theme.spacing.xl }}>
-            <Text style={{ ...theme.typography.body, color: theme.colors.textSecondary }}>
-              We couldn&apos;t find that trip.
-            </Text>
-          </View>
+      <View style={styles.screen}>
+        <StatusBar style="dark" />
+        <SafeAreaView style={styles.fullCenter}>
+          <Text style={styles.emptyTitle}>Trip not found</Text>
+          <Pressable onPress={() => navigation.goBack()} style={styles.backGhostButton}>
+            <Text style={styles.backGhostText}>Back</Text>
+          </Pressable>
         </SafeAreaView>
-      </LinearGradient>
+      </View>
     );
   }
 
   return (
-    <LinearGradient
-      colors={[theme.colors.backgroundGradientStart, theme.colors.backgroundGradientEnd]}
-      style={{ flex: 1 }}
-    >
-      <SafeAreaView style={{ flex: 1 }}>
-        <StatusBar style="dark" />
+    <View style={styles.screen}>
+      <StatusBar style="dark" />
 
-        <View
-          style={{
-            paddingHorizontal: theme.spacing.xxl,
-            paddingTop: theme.spacing.sm,
-            paddingBottom: theme.spacing.lg,
-          }}
-        >
-          <TouchableOpacity
-            activeOpacity={0.75}
-            onPress={() => navigation.goBack()}
-            style={{
-              alignSelf: 'flex-start',
-              paddingRight: theme.spacing.md,
-              paddingVertical: theme.spacing.xs,
-            }}
-          >
-            <Text style={{ color: theme.colors.textPrimary, fontSize: 32, lineHeight: 32 }}>‹</Text>
-          </TouchableOpacity>
+      <TripMap
+        pins={mapData.pins}
+        routeSegments={mapData.routeSegments}
+        selectedPinId={selectedPin?.id ?? null}
+        focusedPin={selectedPin}
+        focusedActivity={focusedActivity}
+        onPinPress={(pin) => {
+          setSelectedPinId(pin.id);
+        }}
+      />
 
-          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-            <Text
-              style={{
-                fontSize: 32,
-                fontWeight: '500',
-                color: theme.colors.textPrimary,
-                lineHeight: 36,
-                marginRight: theme.spacing.sm,
-              }}
-            >
+      <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
+        <View style={styles.topCard}>
+          <View style={styles.headerRow}>
+            <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
+              <Text style={styles.backText}>‹</Text>
+            </Pressable>
+
+            <Text style={styles.tripTitle} numberOfLines={1}>
               {trip.title}
             </Text>
-            <Text style={{ fontSize: 24 }}>{trip.emoji}</Text>
+
+            <View style={styles.backButtonPlaceholder} />
           </View>
         </View>
+      </SafeAreaView>
 
-        <ScrollView
-          contentContainerStyle={{
-            paddingHorizontal: theme.spacing.xl,
-            paddingBottom: theme.spacing.xxl,
-          }}
-        >
-          {tripPhotos[trip.id]?.length ? (
-            <View style={{ marginBottom: theme.spacing.lg }}>
+      <View style={styles.bottomOverlay} pointerEvents="box-none">
+        {focusedActivity ? (
+          <Pressable
+            style={styles.bottomPopupCard}
+            onPress={() => openActivityDetails(focusedActivity)}
+            {...bottomCardPanResponder.panHandlers}
+          >
+            <View style={styles.bottomPopupHeader}>
+              <Text style={styles.bottomPopupTitle} numberOfLines={1}>
+                {`${focusedActivity.icon} ${focusedActivity.name}`}
+              </Text>
               <View
-                style={{
-                  borderRadius: theme.radii.card,
-                  overflow: 'hidden',
-                  shadowColor: '#1A3A2A',
-                  shadowOffset: { width: 0, height: 8 },
-                  shadowOpacity: 0.1,
-                  shadowRadius: 20,
-                  elevation: 4,
-                }}
+                style={[
+                  styles.bottomPopupStatus,
+                  { backgroundColor: focusedActivity.status === 'booked' ? '#d0eadc' : '#e4efe8' },
+                ]}
               >
-                <ScrollView
-                  horizontal={true}
-                  pagingEnabled={true}
-                  showsHorizontalScrollIndicator={false}
-                  onMomentumScrollEnd={(event) => {
-                    const nextIndex = Math.round(event.nativeEvent.contentOffset.x / carouselWidth);
-                    setActivePhotoIndex(nextIndex);
-                  }}
-                >
-                  {tripPhotos[trip.id].map((photo, index) => (
-                    <Image
-                      key={`${trip.id}-photo-${index}`}
-                      source={photo}
-                      resizeMode="cover"
-                      style={{ width: carouselWidth, height: 220 }}
-                    />
-                  ))}
-                </ScrollView>
-              </View>
-
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  marginTop: theme.spacing.sm,
-                }}
-              >
-                {tripPhotos[trip.id].map((_, index) => {
-                  const isActive = index === activePhotoIndex;
-                  return (
-                    <View
-                      key={`${trip.id}-dot-${index}`}
-                      style={{
-                        width: isActive ? 16 : 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: isActive ? theme.colors.accent : theme.colors.textMuted,
-                        opacity: isActive ? 1 : 0.35,
-                        marginHorizontal: 3,
-                      }}
-                    />
-                  );
-                })}
+                <Text style={styles.bottomPopupStatusText}>
+                  {focusedActivity.status === 'booked' ? 'Confirmed' : 'Idea'}
+                </Text>
               </View>
             </View>
-          ) : null}
 
-          <View style={{ paddingLeft: 48, position: 'relative' }}>
-            <View
-              style={{
-                position: 'absolute',
-                left: timelineLineLeft,
-                top: 0,
-                bottom: 0,
-                width: 2,
-                backgroundColor: theme.colors.accent,
-                opacity: 0.25,
-                borderRadius: 1,
-              }}
-            />
-
-            {trip.bookings.map((booking) => {
-              const firstLeg = booking.legs[0];
-              const bookingMeta = [booking.airline, booking.bookingRef].filter(Boolean).join(' · ');
-              const bookingType = bookingTypeMeta[booking.type];
-              const bookingTypeLine = bookingMeta
-                ? `${bookingType.icon} ${bookingMeta}`
-                : `${bookingType.icon} ${bookingType.label}`;
-              const canOpenEventDetail =
-                booking.type === 'event' || booking.type === 'concert' || booking.type === 'festival';
-              const canOpenFlightDetail = booking.type === 'flight' && booking.legs.length > 0;
-              const canOpenHotelDetail = booking.type === 'hotel';
-              const dateToken = firstLeg?.departureDate ?? booking.activityDate;
-              const timeToken = firstLeg?.departureTime ?? booking.activityTime;
-
-              if (booking.status === 'not_booked') {
-                const notBookedCard = (
-                  <View
-                    style={{
-                      backgroundColor: theme.colors.stub,
-                      borderRadius: theme.radii.card,
-                      borderWidth: 1,
-                      borderColor: 'rgba(138,173,160,0.3)',
-                      borderStyle: 'dashed',
-                      padding: 14,
-                    }}
-                  >
-                    <Text style={{ fontSize: 14, fontWeight: '500', color: theme.colors.textMuted }}>
-                      {`${bookingType.icon} ${booking.label}`}
-                    </Text>
-
-                    {booking.activityDate || booking.activityTime ? (
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          color: theme.colors.textMuted,
-                          marginTop: 6,
-                        }}
-                      >
-                        {[booking.activityDate, booking.activityTime].filter(Boolean).join(' · ')}
-                      </Text>
-                    ) : null}
-
-                    {booking.activityLocation ? (
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          color: theme.colors.textMuted,
-                          marginTop: 2,
-                        }}
-                      >
-                        {booking.activityLocation}
-                      </Text>
-                    ) : null}
-
-                    {booking.notes ? (
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          color: theme.colors.textMuted,
-                          marginTop: 6,
-                        }}
-                      >
-                        {booking.notes}
-                      </Text>
-                    ) : null}
-
-                    <Text
-                      style={{
-                        fontSize: 11,
-                        backgroundColor: 'rgba(176,120,0,0.12)',
-                        color: '#7A5200',
-                        paddingHorizontal: 10,
-                        paddingVertical: 3,
-                        borderRadius: 20,
-                        alignSelf: 'flex-start',
-                        marginTop: 6,
-                      }}
-                    >
-                      Not booked yet
-                    </Text>
-                  </View>
-                );
-
-                return (
-                  <View key={booking.id} style={{ position: 'relative', marginBottom: theme.spacing.lg }}>
-                    <View
-                      style={{
-                        position: 'absolute',
-                        left: timelineDotLeft,
-                        top: timelineDotTop,
-                        width: timelineDotSize,
-                        height: timelineDotSize,
-                        borderRadius: timelineDotRadius,
-                        backgroundColor: 'transparent',
-                        borderWidth: 2,
-                        borderColor: theme.colors.textMuted,
-                        opacity: 0.5,
-                      }}
-                    />
-
-                    {canOpenEventDetail ? (
-                      <TouchableOpacity
-                        activeOpacity={0.75}
-                        onPress={() =>
-                          navigation.navigate('EventDetail', {
-                            tripId: trip.id,
-                            bookingId: booking.id,
-                          })
-                        }
-                      >
-                        {notBookedCard}
-                      </TouchableOpacity>
-                    ) : canOpenHotelDetail ? (
-                      <TouchableOpacity
-                        activeOpacity={0.75}
-                        onPress={() =>
-                          navigation.navigate('HotelDetail', {
-                            tripId: trip.id,
-                            bookingId: booking.id,
-                          })
-                        }
-                      >
-                        {notBookedCard}
-                      </TouchableOpacity>
-                    ) : (
-                      notBookedCard
-                    )}
-                  </View>
-                );
-              }
-
-              const bookingCard = (
-                <GlassCard>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 6 }}>
-                    <Text
-                      style={{
-                        fontSize: 11,
-                        fontWeight: '700',
-                        color: theme.colors.accent,
-                        letterSpacing: 0.06,
-                        textTransform: 'uppercase',
-                      }}
-                    >
-                      {getDayDateLabel(dateToken)}
-                    </Text>
-
-                    {timeToken ? (
-                      <>
-                        <View
-                          style={{
-                            width: 3,
-                            height: 3,
-                            borderRadius: 1.5,
-                            backgroundColor: theme.colors.textMuted,
-                            marginHorizontal: 6,
-                          }}
-                        />
-                        <Text style={{ fontSize: 11, color: theme.colors.textMuted }}>
-                          {timeToken}
-                        </Text>
-                      </>
-                    ) : null}
-                  </View>
-
-                  <Text style={{ fontSize: 12, color: theme.colors.textMuted, marginBottom: 8 }}>{bookingTypeLine}</Text>
-
-                  {booking.legs.length === 1 && firstLeg ? (
-                    <View>
-                      <Text style={{ fontSize: 15, fontWeight: '600', color: theme.colors.textPrimary }}>
-                        {`${firstLeg.fromCity} → ${firstLeg.toCity}`}
-                      </Text>
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          color: theme.colors.textMuted,
-                          marginTop: theme.spacing.xs - 2,
-                        }}
-                      >
-                        {firstLeg.flightNumber}
-                      </Text>
-                    </View>
-                  ) : null}
-
-                  {booking.legs.length > 1 ? (
-                    <View
-                      style={{
-                        marginTop: 10,
-                        paddingTop: 10,
-                        borderTopWidth: 0.5,
-                        borderColor: theme.colors.cardBorder,
-                      }}
-                    >
-                      <ConnectedLegs legs={booking.legs} compact={true} />
-                    </View>
-                  ) : null}
-
-                  {booking.legs.length === 0 ? (
-                    <View>
-                      <Text style={{ fontSize: 15, fontWeight: '600', color: theme.colors.textPrimary }}>
-                        {booking.label}
-                      </Text>
-
-                      {booking.activityLocation ? (
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            color: theme.colors.textMuted,
-                            marginTop: theme.spacing.xs - 2,
-                          }}
-                        >
-                          {booking.activityLocation}
-                        </Text>
-                      ) : null}
-
-                      {booking.notes ? (
-                        <Text
-                          style={{
-                            fontSize: 11,
-                            color: theme.colors.textMuted,
-                            marginTop: theme.spacing.xs - 2,
-                          }}
-                        >
-                          {booking.notes}
-                        </Text>
-                      ) : null}
-                    </View>
-                  ) : null}
-                </GlassCard>
-              );
-
-              return (
-                <View key={booking.id} style={{ position: 'relative', marginBottom: theme.spacing.lg }}>
-                  <View
-                    style={{
-                      position: 'absolute',
-                      left: timelineDotLeft,
-                      top: timelineDotTop,
-                      width: timelineDotSize,
-                      height: timelineDotSize,
-                      borderRadius: timelineDotRadius,
-                      backgroundColor: theme.colors.accent,
-                      borderWidth: 2,
-                      borderColor: theme.colors.backgroundGradientStart,
-                      shadowColor: theme.colors.accent,
-                      shadowOpacity: 0.4,
-                      shadowRadius: 4,
-                    }}
-                  />
-
-                  {canOpenFlightDetail ? (
-                    <TouchableOpacity
-                      activeOpacity={0.75}
-                      onPress={() =>
-                        navigation.navigate(
-                          'FlightDetail',
-                          {
-                            tripId: trip.id,
-                            bookingId: booking.id,
-                          } as never
-                        )
-                      }
-                    >
-                      {bookingCard}
-                    </TouchableOpacity>
-                  ) : canOpenHotelDetail ? (
-                    <TouchableOpacity
-                      activeOpacity={0.75}
-                      onPress={() =>
-                        navigation.navigate('HotelDetail', {
-                          tripId: trip.id,
-                          bookingId: booking.id,
-                        })
-                      }
-                    >
-                      {bookingCard}
-                    </TouchableOpacity>
-                  ) : canOpenEventDetail ? (
-                    <TouchableOpacity
-                      activeOpacity={0.75}
-                      onPress={() =>
-                        navigation.navigate('EventDetail', {
-                          tripId: trip.id,
-                          bookingId: booking.id,
-                        })
-                      }
-                    >
-                      {bookingCard}
-                    </TouchableOpacity>
-                  ) : (
-                    bookingCard
-                  )}
-                </View>
-              );
-            })}
-          </View>
-        </ScrollView>
-      </SafeAreaView>
-    </LinearGradient>
+            <Text style={styles.bottomPopupSubtitle} numberOfLines={1}>
+              {[
+                focusedActivity.addressLabel,
+                [focusedActivity.city, focusedActivity.country].filter(Boolean).join(', '),
+                [focusedActivity.dateLabel, focusedActivity.timeLabel].filter(Boolean).join(' · '),
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </Text>
+            <Text style={styles.bottomPopupHint}>Swipe up for details</Text>
+          </Pressable>
+        ) : null}
+      </View>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: '#e8f0e9',
+  },
+  fullCenter: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  emptyTitle: {
+    color: '#1e3d2f',
+    fontSize: 22,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  backGhostButton: {
+    backgroundColor: '#1e3d2f',
+    borderRadius: 999,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  backGhostText: {
+    color: '#ecf4ed',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  topOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    paddingHorizontal: 12,
+    paddingTop: 6,
+  },
+  topCard: {
+    backgroundColor: colors.topCard,
+    borderRadius: 22,
+    borderWidth: 1,
+    borderColor: 'rgba(30,61,47,0.18)',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  backButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dce8df',
+  },
+  backButtonPlaceholder: {
+    width: 34,
+    height: 34,
+  },
+  backText: {
+    color: colors.accent,
+    fontSize: 28,
+    lineHeight: 30,
+    marginTop: -1,
+  },
+  tripTitle: {
+    color: colors.accent,
+    fontSize: 18,
+    fontWeight: '800',
+    flexShrink: 1,
+    textAlign: 'center',
+    marginHorizontal: 10,
+  },
+  bottomOverlay: {
+    position: 'absolute',
+    left: 10,
+    right: 10,
+    bottom: 10,
+  },
+  bottomPopupCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#c8dcd0',
+    backgroundColor: 'rgba(245,251,247,0.98)',
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    minHeight: 108,
+  },
+  bottomPopupHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  bottomPopupTitle: {
+    color: '#1c4433',
+    fontSize: 15,
+    fontWeight: '800',
+    flex: 1,
+  },
+  bottomPopupStatus: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  bottomPopupStatusText: {
+    color: '#264d3b',
+    fontSize: 10,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+  bottomPopupSubtitle: {
+    color: '#5f7d6e',
+    fontSize: 12,
+    marginTop: 6,
+  },
+  bottomPopupHint: {
+    color: '#5a7768',
+    fontSize: 11,
+    fontWeight: '700',
+    marginTop: 10,
+    textTransform: 'uppercase',
+    letterSpacing: 0.3,
+  },
+});
