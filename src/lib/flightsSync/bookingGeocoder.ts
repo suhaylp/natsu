@@ -11,6 +11,9 @@ type GeocodeResponseRow = {
 };
 
 const placeBookingTypes = new Set<BookingType>(['hotel', 'event', 'concert', 'festival', 'food-tour']);
+const persistentGeocodeCache = new Map<string, Coordinates>();
+const GEOCODE_TIMEOUT_MS = 1800;
+const MAX_GEOCODE_QUERIES_PER_BOOKING = 3;
 
 function parseCoordinatePair(latitudeRaw: string, longitudeRaw: string): Coordinates | null {
   const latitude = Number(latitudeRaw);
@@ -117,9 +120,19 @@ async function geocodeWithNominatim(
   fetchImpl: typeof fetch
 ): Promise<Coordinates | null> {
   const cacheKey = query.trim().toLowerCase();
+  const persisted = persistentGeocodeCache.get(cacheKey);
+  if (persisted) {
+    return persisted;
+  }
+
   if (cache.has(cacheKey)) {
     return cache.get(cacheKey) ?? null;
   }
+
+  const abortController = new AbortController();
+  const timeout = setTimeout(() => {
+    abortController.abort();
+  }, GEOCODE_TIMEOUT_MS);
 
   try {
     const endpoint = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
@@ -129,6 +142,7 @@ async function geocodeWithNominatim(
         Accept: 'application/json',
         'User-Agent': 'natsu-trip-sync/1.0',
       },
+      signal: abortController.signal,
     });
 
     if (!response.ok) {
@@ -144,11 +158,16 @@ async function geocodeWithNominatim(
     }
 
     const coordinates = parseCoordinatePair(firstRow.lat, firstRow.lon);
+    if (coordinates) {
+      persistentGeocodeCache.set(cacheKey, coordinates);
+    }
     cache.set(cacheKey, coordinates);
     return coordinates;
   } catch {
     cache.set(cacheKey, null);
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
@@ -198,7 +217,7 @@ export async function enrichTripsWithBookingCoordinates(
       }
 
       let geocoded: Coordinates | null = null;
-      for (const query of geocodeQueries) {
+      for (const query of geocodeQueries.slice(0, MAX_GEOCODE_QUERIES_PER_BOOKING)) {
         geocoded = await geocodeWithNominatim(query, geocodeCache, fetchImpl);
         if (geocoded) {
           break;
