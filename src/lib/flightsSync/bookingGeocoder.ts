@@ -10,6 +10,15 @@ type GeocodeResponseRow = {
   lon?: string;
 };
 
+type PhotonResponse = {
+  features?: Array<{
+    geometry?: {
+      type?: string;
+      coordinates?: [number, number];
+    };
+  }>;
+};
+
 const placeBookingTypes = new Set<BookingType>(['hotel', 'event', 'concert', 'festival', 'food-tour']);
 const persistentGeocodeCache = new Map<string, Coordinates>();
 const GEOCODE_TIMEOUT_MS = 1800;
@@ -135,6 +144,32 @@ async function geocodeWithNominatim(
   }, GEOCODE_TIMEOUT_MS);
 
   try {
+    // Fast free geocoder: try Photon first.
+    const photonEndpoint = `https://photon.komoot.io/api/?limit=1&q=${encodeURIComponent(query)}`;
+    const photonResponse = await fetchImpl(photonEndpoint, {
+      method: 'GET',
+      headers: {
+        Accept: 'application/json',
+      },
+      signal: abortController.signal,
+    });
+
+    if (photonResponse.ok) {
+      const photonPayload = (await photonResponse.json().catch(() => null)) as PhotonResponse | null;
+      const photonCoordinates = photonPayload?.features?.[0]?.geometry?.coordinates;
+      if (Array.isArray(photonCoordinates) && photonCoordinates.length >= 2) {
+        const longitudeRaw = photonCoordinates[0];
+        const latitudeRaw = photonCoordinates[1];
+        const parsed = parseCoordinatePair(String(latitudeRaw), String(longitudeRaw));
+        if (parsed) {
+          persistentGeocodeCache.set(cacheKey, parsed);
+          cache.set(cacheKey, parsed);
+          return parsed;
+        }
+      }
+    }
+
+    // Fallback to Nominatim when Photon has no match.
     const endpoint = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(query)}`;
     const response = await fetchImpl(endpoint, {
       method: 'GET',
