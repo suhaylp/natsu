@@ -74,24 +74,39 @@ function shouldGeocodeBooking(booking: Booking): boolean {
   return placeBookingTypes.has(booking.type) && !hasExactCoordinates(booking);
 }
 
-function buildGeocodeQuery(booking: Booking): string | null {
-  const rawParts = [
-    booking.type === 'hotel' ? booking.hotelStay?.name ?? booking.label : booking.label,
-    booking.activityLocation,
-    booking.hotelStay?.address,
-    booking.hotelStay?.city,
-  ];
-
-  const parts = rawParts
-    .map((part) => part?.trim())
-    .filter((part): part is string => Boolean(part))
-    .filter((part, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === part.toLowerCase()) === index);
-
-  if (parts.length === 0) {
-    return null;
+function splitLocationSegments(value?: string): string[] {
+  if (!value) {
+    return [];
   }
 
-  return parts.join(', ');
+  const raw = value.replace(/[|·]/g, ',');
+  return raw
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function buildGeocodeQueries(booking: Booking): string[] {
+  const primaryName = (booking.type === 'hotel' ? booking.hotelStay?.name : booking.label) ?? booking.label;
+  const city = booking.hotelStay?.city;
+  const address = booking.hotelStay?.address;
+  const activityLocation = booking.activityLocation;
+
+  const candidates = [
+    primaryName,
+    primaryName && city ? `${primaryName}, ${city}` : undefined,
+    primaryName && activityLocation ? `${primaryName}, ${activityLocation.replace(/[|·]/g, ',')}` : undefined,
+    address,
+    activityLocation?.replace(/[|·]/g, ','),
+    ...splitLocationSegments(activityLocation),
+    ...splitLocationSegments(address),
+    city,
+  ]
+    .map((value) => value?.trim())
+    .filter((value): value is string => Boolean(value))
+    .filter((value, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index);
+
+  return candidates;
 }
 
 async function geocodeWithNominatim(
@@ -174,13 +189,20 @@ export async function enrichTripsWithBookingCoordinates(
         continue;
       }
 
-      const geocodeQuery = buildGeocodeQuery(booking);
-      if (!geocodeQuery) {
+      const geocodeQueries = buildGeocodeQueries(booking);
+      if (geocodeQueries.length === 0) {
         enrichedBookings.push(booking);
         continue;
       }
 
-      const geocoded = await geocodeWithNominatim(geocodeQuery, geocodeCache, fetchImpl);
+      let geocoded: Coordinates | null = null;
+      for (const query of geocodeQueries) {
+        geocoded = await geocodeWithNominatim(query, geocodeCache, fetchImpl);
+        if (geocoded) {
+          break;
+        }
+      }
+
       if (!geocoded) {
         enrichedBookings.push(booking);
         continue;
