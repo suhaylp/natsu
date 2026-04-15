@@ -13,7 +13,7 @@ type GeocodeResponseRow = {
 const placeBookingTypes = new Set<BookingType>(['hotel', 'event', 'concert', 'festival', 'food-tour']);
 const persistentGeocodeCache = new Map<string, Coordinates>();
 const GEOCODE_TIMEOUT_MS = 1800;
-const MAX_GEOCODE_QUERIES_PER_BOOKING = 3;
+const MAX_GEOCODE_QUERIES_PER_BOOKING = 4;
 
 function parseCoordinatePair(latitudeRaw: string, longitudeRaw: string): Coordinates | null {
   const latitude = Number(latitudeRaw);
@@ -77,36 +77,36 @@ function shouldGeocodeBooking(booking: Booking): boolean {
   return placeBookingTypes.has(booking.type) && !hasExactCoordinates(booking);
 }
 
-function splitLocationSegments(value?: string): string[] {
-  if (!value) {
-    return [];
-  }
-
-  const raw = value.replace(/[|·]/g, ',');
-  return raw
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
-}
-
 function buildGeocodeQueries(booking: Booking): string[] {
   const primaryName = (booking.type === 'hotel' ? booking.hotelStay?.name : booking.label) ?? booking.label;
   const city = booking.hotelStay?.city;
   const address = booking.hotelStay?.address;
   const activityLocation = booking.activityLocation;
   const hasContext = Boolean(city || address || activityLocation);
+  const normalizedActivityLocation = activityLocation?.replace(/[|·]/g, ',');
 
-  const candidates = [
-    primaryName && activityLocation ? `${primaryName}, ${activityLocation.replace(/[|·]/g, ',')}` : undefined,
-    primaryName && address ? `${primaryName}, ${address}` : undefined,
+  const hotelPreferredQueries = [
     primaryName && city ? `${primaryName}, ${city}` : undefined,
+    primaryName && normalizedActivityLocation ? `${primaryName}, ${normalizedActivityLocation}` : undefined,
+    primaryName && address ? `${primaryName}, ${address}` : undefined,
+    normalizedActivityLocation,
     address,
-    activityLocation?.replace(/[|·]/g, ','),
-    ...splitLocationSegments(activityLocation),
-    ...splitLocationSegments(address),
     city,
     !hasContext ? primaryName : undefined,
-  ]
+  ];
+
+  const eventPreferredQueries = [
+    normalizedActivityLocation,
+    address,
+    primaryName && city ? `${primaryName}, ${city}` : undefined,
+    primaryName && normalizedActivityLocation ? `${primaryName}, ${normalizedActivityLocation}` : undefined,
+    city,
+    !hasContext ? primaryName : undefined,
+  ];
+
+  const rawCandidates = booking.type === 'hotel' ? hotelPreferredQueries : eventPreferredQueries;
+
+  const candidates = rawCandidates
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value))
     .filter((value, index, all) => all.findIndex((candidate) => candidate.toLowerCase() === value.toLowerCase()) === index);
