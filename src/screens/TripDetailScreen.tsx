@@ -235,7 +235,7 @@ function parseCoordinatesFromText(value?: string): Coordinates | null {
     return null;
   }
 
-  const match = value.match(/(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/);
+  const match = value.match(/(?:^|[^\d-])(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)(?!\d)/);
   if (!match) {
     return null;
   }

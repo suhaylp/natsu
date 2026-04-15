@@ -42,8 +42,8 @@ export function extractCoordinatesFromText(value?: string): Coordinates | null {
   const patterns = [
     /@(-?\d{1,2}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/, // Google maps @lat,lon
     /!3d(-?\d{1,2}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/, // Google maps !3dlat!4dlon
-    /(?:[?&](?:q|ll|sll|center)=)\s*(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/, // URL query params
-    /(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/, // plain text "lat, lon"
+    /(?:[?&](?:q|ll|sll|center)=)\s*(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/, // URL query params
+    /(?:^|[^\d-])(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)(?!\d)/, // plain text "lat, lon"
   ];
 
   for (const pattern of patterns) {
@@ -91,16 +91,18 @@ function buildGeocodeQueries(booking: Booking): string[] {
   const city = booking.hotelStay?.city;
   const address = booking.hotelStay?.address;
   const activityLocation = booking.activityLocation;
+  const hasContext = Boolean(city || address || activityLocation);
 
   const candidates = [
-    primaryName,
-    primaryName && city ? `${primaryName}, ${city}` : undefined,
     primaryName && activityLocation ? `${primaryName}, ${activityLocation.replace(/[|·]/g, ',')}` : undefined,
+    primaryName && address ? `${primaryName}, ${address}` : undefined,
+    primaryName && city ? `${primaryName}, ${city}` : undefined,
     address,
     activityLocation?.replace(/[|·]/g, ','),
     ...splitLocationSegments(activityLocation),
     ...splitLocationSegments(address),
     city,
+    !hasContext ? primaryName : undefined,
   ]
     .map((value) => value?.trim())
     .filter((value): value is string => Boolean(value))

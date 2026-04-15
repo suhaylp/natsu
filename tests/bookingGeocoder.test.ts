@@ -13,6 +13,14 @@ describe('extractCoordinatesFromText', () => {
       longitude: 98.987152,
     });
   });
+
+  it('does not mistake street numbers for coordinates', () => {
+    const coordinates = extractCoordinatesFromText(
+      '872, 8 Soi Thoet Thai 26, Talat Phlu, Thon Buri, Bangkok 10600, Thailand'
+    );
+
+    expect(coordinates).toBeNull();
+  });
 });
 
 describe('enrichTripsWithBookingCoordinates', () => {
