@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { trips as localTrips, type Trip } from './trips';
+import type { Trip } from './trips';
 import type { FlightsApiErrorResponse, FlightsApiResponse } from '../lib/flightsSync/contracts';
-import { mergeTripsWithRemoteFlights } from '../lib/flightsSync/mergeTrips';
 
 type TripsDataContextValue = {
   trips: Trip[];
@@ -66,7 +65,7 @@ async function fetchRemoteFlights(): Promise<FlightsApiResponse> {
 }
 
 export function TripsDataProvider({ children }: { children: ReactNode }) {
-  const [trips, setTrips] = useState<Trip[]>(localTrips);
+  const [trips, setTrips] = useState<Trip[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(null);
@@ -82,8 +81,7 @@ export function TripsDataProvider({ children }: { children: ReactNode }) {
 
     try {
       const payload = await fetchRemoteFlights();
-      const mergedTrips = mergeTripsWithRemoteFlights(localTrips, payload.trips);
-      setTrips(mergedTrips);
+      setTrips(payload.trips);
       setLastSyncedAt(payload.generatedAt);
       setError(null);
     } catch (err) {
