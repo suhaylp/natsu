@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { StackScreenProps } from '@react-navigation/stack';
 import { GlassCard } from '../components/GlassCard';
 import { useTripsData } from '../data/TripsDataContext';
+import { normalizeLocationText } from '../lib/locationText';
 import { type Trip } from '../data/trips';
 import { theme } from '../theme/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
@@ -62,6 +63,7 @@ export function HotelDetailScreen({ navigation, route }: Props) {
     ? [hotel.checkOutDate, hotel.checkOutTime].filter(Boolean).join(' · ')
     : 'TBD';
   const locationLabel = [booking?.activityLocation, hotel?.address, hotel?.city]
+    .map((value) => normalizeLocationText(value))
     .filter(Boolean)
     .find((value, index, values) => values.indexOf(value) === index);
 

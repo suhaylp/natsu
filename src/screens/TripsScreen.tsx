@@ -6,7 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { StatusBar } from 'expo-status-bar';
 import { StackScreenProps } from '@react-navigation/stack';
 import { GlassCard } from '../components/GlassCard';
-import { tripPhotos } from '../data/tripPhotos';
+import { getTripPhotos } from '../data/tripPhotoResolver';
 import { useTripsData } from '../data/TripsDataContext';
 import { type Trip } from '../data/trips';
 import { theme } from '../theme/theme';
@@ -136,7 +136,7 @@ export function TripsScreen({ navigation }: Props) {
   const renderTripCard = (trip: Trip, key: string) => {
     const confirmedCount = trip.bookings.filter((booking) => booking.status === 'booked').length;
     const toBookCount = trip.bookings.filter((booking) => booking.status === 'not_booked').length;
-    const photos = tripPhotos[trip.id] ?? [];
+    const photos = getTripPhotos(trip);
     const hasPhotos = photos.length > 0;
     const activePhotoIndex = photoIndexByTrip[trip.id] ?? 0;
 

@@ -149,16 +149,27 @@ export function TripMap({
       return;
     }
 
-    mapRef.current.animateToRegion(
+    mapRef.current.animateCamera(
       {
-        latitude: focusedPin.latitude,
-        longitude: focusedPin.longitude,
-        latitudeDelta: 2.1,
-        longitudeDelta: 2.1,
+        center: {
+          latitude: focusedPin.latitude,
+          longitude: focusedPin.longitude,
+        },
+        zoom: 10.75,
       },
-      320
+      {
+        duration: 520,
+      }
     );
   }, [focusedActivity?.id, focusedPin?.id]);
+
+  useEffect(() => {
+    if (!mapRef.current || focusedPin || focusedActivity?.bookingType === 'flight') {
+      return;
+    }
+
+    mapRef.current.animateToRegion(initialRegion, 600);
+  }, [focusedActivity?.bookingType, focusedPin, initialRegion]);
 
   return (
     <View style={styles.container}>

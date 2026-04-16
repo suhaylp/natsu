@@ -177,12 +177,20 @@ export function TripMap({
         [focusedFlightSegment.fromLatitude, focusedFlightSegment.fromLongitude],
         [focusedFlightSegment.toLatitude, focusedFlightSegment.toLongitude]
       );
-      map.fitBounds(bounds.pad(0.55), { animate: true });
+      map.fitBounds(bounds.pad(0.55), {
+        animate: true,
+        duration: 0.85,
+        easeLinearity: 0.25,
+      });
       return;
     }
 
     if (focusedPin) {
-      map.setView([focusedPin.latitude, focusedPin.longitude], 11, { animate: true });
+      map.flyTo([focusedPin.latitude, focusedPin.longitude], 11.5, {
+        animate: true,
+        duration: 0.75,
+        easeLinearity: 0.25,
+      });
       return;
     }
 
@@ -195,12 +203,21 @@ export function TripMap({
     ];
 
     if (allCoordinates.length === 1) {
-      map.setView(allCoordinates[0], 11, { animate: true });
+      map.flyTo(allCoordinates[0], 11.5, {
+        animate: true,
+        duration: 0.75,
+        easeLinearity: 0.25,
+      });
       return;
     }
 
     if (allCoordinates.length > 1) {
-      map.fitBounds(L.latLngBounds(allCoordinates), { padding: [48, 48], animate: true });
+      map.fitBounds(L.latLngBounds(allCoordinates), {
+        padding: [48, 48],
+        animate: true,
+        duration: 0.9,
+        easeLinearity: 0.25,
+      });
     }
   }, [focusedFlightSegment, focusedPin, onPinPress, pins, routeSegments, selectedPinId]);
 

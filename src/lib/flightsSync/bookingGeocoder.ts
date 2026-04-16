@@ -1,4 +1,5 @@
 import type { Booking, BookingType, Trip } from '../../data/trips';
+import { normalizeLocationText } from '../locationText';
 
 type Coordinates = {
   latitude: number;
@@ -104,16 +105,39 @@ function inferCityFromLocation(location?: string): string | undefined {
   return parts[0];
 }
 
+function inferCountryFromLocation(location?: string): string | undefined {
+  if (!location) {
+    return undefined;
+  }
+
+  const parts = location
+    .replace(/[|·]/g, ',')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length === 0) {
+    return undefined;
+  }
+
+  return parts[parts.length - 1];
+}
+
 function buildGeocodeQueries(booking: Booking): string[] {
   const primaryName = (booking.type === 'hotel' ? booking.hotelStay?.name : booking.label) ?? booking.label;
-  const city = booking.hotelStay?.city ?? inferCityFromLocation(booking.activityLocation);
-  const address = booking.hotelStay?.address;
-  const activityLocation = booking.activityLocation;
+  const activityLocation = normalizeLocationText(booking.activityLocation) ?? booking.activityLocation;
+  const address = normalizeLocationText(booking.hotelStay?.address) ?? booking.hotelStay?.address;
+  const city = normalizeLocationText(booking.hotelStay?.city) ?? inferCityFromLocation(activityLocation);
+  const country = inferCountryFromLocation(activityLocation);
   const hasContext = Boolean(city || address || activityLocation);
   const normalizedActivityLocation = activityLocation?.replace(/[|·]/g, ',');
+  const cityCountry = city && country ? `${city}, ${country}` : undefined;
+  const nameCityCountry = primaryName && city && country ? `${primaryName}, ${city}, ${country}` : undefined;
 
   const hotelPreferredQueries = [
+    cityCountry,
     primaryName && city ? `${primaryName}, ${city}` : undefined,
+    nameCityCountry,
     primaryName && normalizedActivityLocation ? `${primaryName}, ${normalizedActivityLocation}` : undefined,
     primaryName && address ? `${primaryName}, ${address}` : undefined,
     normalizedActivityLocation,
@@ -125,9 +149,11 @@ function buildGeocodeQueries(booking: Booking): string[] {
   const eventPreferredQueries = [
     normalizedActivityLocation,
     address,
+    cityCountry,
+    city,
+    nameCityCountry,
     primaryName && city ? `${primaryName}, ${city}` : undefined,
     primaryName && normalizedActivityLocation ? `${primaryName}, ${normalizedActivityLocation}` : undefined,
-    city,
     !hasContext ? primaryName : undefined,
   ];
 

@@ -5,6 +5,7 @@ import { StatusBar } from 'expo-status-bar';
 import { StackScreenProps } from '@react-navigation/stack';
 import { GlassCard } from '../components/GlassCard';
 import { useTripsData } from '../data/TripsDataContext';
+import { normalizeLocationText } from '../lib/locationText';
 import { theme } from '../theme/theme';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 
@@ -80,7 +81,9 @@ export function EventDetailScreen({ navigation, route }: Props) {
   const dateTimeLabel = isBookingEvent
     ? [booking.activityDate, booking.activityTime].filter(Boolean).join(' · ') || 'TBD'
     : route.params.dateLabel ?? 'TBD';
-  const location = isBookingEvent ? booking.activityLocation ?? 'Location TBD' : route.params.location ?? 'Location TBD';
+  const location = isBookingEvent
+    ? normalizeLocationText(booking.activityLocation) ?? 'Location TBD'
+    : normalizeLocationText(route.params.location) ?? 'Location TBD';
   const notes = isBookingEvent ? booking.notes : route.params.notes;
   const eventImageUrl = isBookingEvent ? booking.imageUrl ?? extractImageUrlFromText(booking.notes) : undefined;
 

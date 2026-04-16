@@ -1,5 +1,6 @@
 import { trips as localTrips } from '../../data/trips';
 import type { Booking, BookingStatus, BookingType, Trip } from '../../data/trips';
+import { normalizeLocationText } from '../locationText';
 import type { MappingDiagnostics } from './notionMapper';
 import { fetchNotionFlightPages, NotionMappingError } from './notionMapper';
 
@@ -520,9 +521,9 @@ function parseFlatIdeaRow(page: NotionPage): FlatIdeaRow {
     throw new NotionMappingError('Missing required Notion property: booking_label');
   }
 
-  const city = getOptionalText(properties, 'city');
-  const country = getOptionalText(properties, 'country');
-  const address = getOptionalText(properties, 'address');
+  const city = normalizeLocationText(getOptionalText(properties, 'city'));
+  const country = normalizeLocationText(getOptionalText(properties, 'country'));
+  const address = normalizeLocationText(getOptionalText(properties, 'address'));
   const coordinatePair = normalizeCoordinatePair(
     getOptionalNumber(properties, 'latitude'),
     getOptionalNumber(properties, 'longitude')

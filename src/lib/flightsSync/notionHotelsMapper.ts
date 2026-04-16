@@ -1,5 +1,6 @@
 import { trips as localTrips } from '../../data/trips';
 import type { Booking, BookingStatus, Trip } from '../../data/trips';
+import { normalizeLocationText } from '../locationText';
 import type { MappingDiagnostics } from './notionMapper';
 import { fetchNotionFlightPages, NotionMappingError } from './notionMapper';
 
@@ -437,8 +438,8 @@ function parseFlatHotelRow(page: NotionPage): FlatHotelRow {
 
   const confirmation = getOptionalText(properties, 'confirmation') ?? getOptionalText(properties, 'booking_id');
   const bookingId = getOptionalText(properties, 'booking_id') ?? confirmation ?? page.id ?? `${tripId}-hotel-${normalizeBookingKey(hotelName)}`;
-  const city = getOptionalText(properties, 'city');
-  const address = getOptionalText(properties, 'address');
+  const city = normalizeLocationText(getOptionalText(properties, 'city'));
+  const address = normalizeLocationText(getOptionalText(properties, 'address'));
   const coordinatePair = normalizeCoordinatePair(
     getOptionalNumber(properties, 'latitude'),
     getOptionalNumber(properties, 'longitude')

@@ -6,6 +6,7 @@ import { StackScreenProps } from '@react-navigation/stack';
 import { TripMap } from '../components/tripOverview/TripMap';
 import { useTripsData } from '../data/TripsDataContext';
 import type { Booking, BookingType, Trip } from '../data/trips';
+import { normalizeLocationText } from '../lib/locationText';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import type { MapPin, RouteSegment, StopActivity } from '../components/tripOverview/types';
 
@@ -170,7 +171,7 @@ function resolveCountryName(options: { code?: string; city?: string; location?: 
   }
 
   if (options.location) {
-    const locationParts = options.location
+    const locationParts = (normalizeLocationText(options.location) ?? options.location)
       .split(',')
       .map((part) => part.trim())
       .filter(Boolean);
@@ -222,7 +223,8 @@ function getCityFromLocation(location?: string): string | undefined {
     return undefined;
   }
 
-  const firstSegment = location.split('·')[0]?.split('|')[0]?.split(',')[0]?.trim();
+  const normalizedLocation = normalizeLocationText(location) ?? location;
+  const firstSegment = normalizedLocation.split(',')[0]?.trim();
   if (!firstSegment) {
     return undefined;
   }
@@ -784,7 +786,7 @@ export function TripDetailScreen({ navigation, route }: Props) {
 
             <Text style={styles.bottomPopupSubtitle} numberOfLines={1}>
               {[
-                focusedActivity.addressLabel,
+                normalizeLocationText(focusedActivity.addressLabel) ?? focusedActivity.addressLabel,
                 [focusedActivity.city, focusedActivity.country].filter(Boolean).join(', '),
                 [focusedActivity.dateLabel, focusedActivity.timeLabel].filter(Boolean).join(' · '),
               ]

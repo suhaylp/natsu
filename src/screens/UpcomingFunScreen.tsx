@@ -4,7 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StackScreenProps } from '@react-navigation/stack';
 import { GlassCard } from '../components/GlassCard';
 import { useTripsData } from '../data/TripsDataContext';
-import { tripPhotos } from '../data/tripPhotos';
+import { getTripPhotos } from '../data/tripPhotoResolver';
 import { type Booking } from '../data/trips';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import { theme } from '../theme/theme';
@@ -144,7 +144,7 @@ function getEventCategoryFromBookingType(type: Booking['type']): EventCategory {
   return 'Other';
 }
 
-function getEventImageForBooking(booking: Booking, tripId: string): number {
+function getEventImageForBooking(booking: Booking, trip: { id: string; title: string }): number {
   if (booking.type === 'concert') {
     return require('../../assets/photos/tameimpala.jpg');
   }
@@ -157,7 +157,7 @@ function getEventImageForBooking(booking: Booking, tripId: string): number {
     return require('../../assets/photos/harrison.jpg');
   }
 
-  return tripPhotos[tripId]?.[0] ?? require('../../assets/photos/newyears1.jpg');
+  return getTripPhotos(trip)[0] ?? require('../../assets/photos/newyears1.jpg');
 }
 
 function PhotoAttachment({ source, height }: { source: number; height: number }) {
@@ -207,7 +207,7 @@ export function UpcomingFunScreen({ navigation }: Props) {
             location: booking.activityLocation ?? trip.title,
             category: getEventCategoryFromBookingType(booking.type),
             confirmed: booking.status === 'booked',
-            image: getEventImageForBooking(booking, trip.id),
+            image: getEventImageForBooking(booking, trip),
             tripId: trip.id,
             bookingId: booking.id,
             notes: booking.notes,
