@@ -125,7 +125,7 @@ export function HomeScreen({ navigation }: Props) {
         <StatusBar hidden />
 
         <ScrollView
-          scrollEnabled={false}
+          scrollEnabled={true}
           bounces={false}
           contentContainerStyle={{
             paddingHorizontal: theme.spacing.xxl,
