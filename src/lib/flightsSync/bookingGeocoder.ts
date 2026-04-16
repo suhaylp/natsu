@@ -86,9 +86,27 @@ function shouldGeocodeBooking(booking: Booking): boolean {
   return placeBookingTypes.has(booking.type) && !hasExactCoordinates(booking);
 }
 
+function inferCityFromLocation(location?: string): string | undefined {
+  if (!location) {
+    return undefined;
+  }
+
+  const parts = location
+    .replace(/[|·]/g, ',')
+    .split(',')
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (parts.length >= 2) {
+    return parts[parts.length - 2];
+  }
+
+  return parts[0];
+}
+
 function buildGeocodeQueries(booking: Booking): string[] {
   const primaryName = (booking.type === 'hotel' ? booking.hotelStay?.name : booking.label) ?? booking.label;
-  const city = booking.hotelStay?.city;
+  const city = booking.hotelStay?.city ?? inferCityFromLocation(booking.activityLocation);
   const address = booking.hotelStay?.address;
   const activityLocation = booking.activityLocation;
   const hasContext = Boolean(city || address || activityLocation);
