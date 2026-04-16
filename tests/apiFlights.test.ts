@@ -247,4 +247,83 @@ describe('GET /api/flights', () => {
       },
     });
   });
+
+  it('merges Asia Backpacking into South East Asia as one trip', async () => {
+    const response = createMockResponse();
+
+    vi.spyOn(notionMapper, 'fetchNotionFlightPages').mockResolvedValue([{ properties: {} }]);
+    vi.spyOn(notionMapper, 'mapNotionFlightPagesToTripsWithDiagnostics').mockReturnValue({
+      trips: [
+        {
+          id: 'trip-sea',
+          title: 'South East Asia',
+          emoji: '✈️',
+          dateRange: 'Jul 15 – Aug 24, 2026',
+          bookings: [
+            {
+              id: 'flight-1',
+              type: 'flight',
+              status: 'booked',
+              label: 'Flight',
+              legs: [],
+            },
+          ],
+        },
+      ],
+      diagnostics: {
+        totalRows: 1,
+        mappedRows: 1,
+        skippedRows: 0,
+        rowErrors: [],
+      },
+    });
+
+    vi.spyOn(notionHotelsMapper, 'fetchNotionHotelPages').mockResolvedValue([]);
+    vi.spyOn(notionHotelsMapper, 'mapNotionHotelPagesToTripsWithDiagnostics').mockImplementation(() => {
+      throw new notionMapper.NotionMappingError('No valid hotel rows found in Notion');
+    });
+
+    vi.spyOn(notionIdeasMapper, 'fetchNotionIdeaPages').mockResolvedValue([{ properties: {} } as never]);
+    vi.spyOn(notionIdeasMapper, 'mapNotionIdeaPagesToTripsWithDiagnostics').mockReturnValue({
+      trips: [
+        {
+          id: 'trip-asia-backpacking',
+          title: 'Asia Backpacking',
+          emoji: '✨',
+          dateRange: 'Jul 15 – Aug 24, 2026',
+          bookings: [
+            {
+              id: 'idea-1',
+              type: 'event',
+              status: 'not_booked',
+              label: 'Idea',
+              legs: [],
+            },
+          ],
+        },
+      ],
+      diagnostics: {
+        totalRows: 1,
+        mappedRows: 1,
+        skippedRows: 0,
+        rowErrors: [],
+      },
+    });
+
+    await flightsHandler(
+      {
+        method: 'GET',
+        headers: {
+          'x-api-key': 'shared-key',
+        },
+      },
+      response.response
+    );
+
+    expect(response.getStatusCode()).toBe(200);
+    const payload = response.getPayload() as { trips: Array<{ title: string; bookings: unknown[] }> };
+    expect(payload.trips).toHaveLength(1);
+    expect(payload.trips[0].title).toBe('South East Asia');
+    expect(payload.trips[0].bookings).toHaveLength(2);
+  });
 });

@@ -123,12 +123,30 @@ function normalizeTripTitle(title: string): string {
   return title.trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+function canonicalTripTitle(title: string): string {
+  const normalized = normalizeTripTitle(title).replace(/[^a-z0-9\s]/g, '');
+
+  if (
+    normalized.includes('south east asia') ||
+    normalized.includes('southeast asia') ||
+    normalized.includes('southeastasia') ||
+    normalized.includes('asia backpacking')
+  ) {
+    return 'south east asia';
+  }
+
+  return normalized;
+}
+
 function mergeRemoteTrips(...tripGroups: Trip[][]): Trip[] {
   const mergedTrips: Trip[] = [];
 
   for (const trip of tripGroups.flat()) {
     const match = mergedTrips.find(
-      (candidate) => candidate.id === trip.id || normalizeTripTitle(candidate.title) === normalizeTripTitle(trip.title)
+      (candidate) =>
+        candidate.id === trip.id ||
+        normalizeTripTitle(candidate.title) === normalizeTripTitle(trip.title) ||
+        canonicalTripTitle(candidate.title) === canonicalTripTitle(trip.title)
     );
 
     if (!match) {
