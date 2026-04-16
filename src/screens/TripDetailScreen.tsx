@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { StackScreenProps } from '@react-navigation/stack';
@@ -715,20 +715,6 @@ export function TripDetailScreen({ navigation, route }: Props) {
     });
   };
 
-  const bottomCardPanResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_, gestureState) =>
-          Math.abs(gestureState.dy) > 8 && Math.abs(gestureState.dy) > Math.abs(gestureState.dx),
-        onPanResponderRelease: (_, gestureState) => {
-          if (gestureState.dy < -28 && focusedActivity) {
-            openActivityDetails(focusedActivity);
-          }
-        },
-      }),
-    [focusedActivity]
-  );
-
   if (!trip) {
     return (
       <View style={styles.screen}>
@@ -779,7 +765,6 @@ export function TripDetailScreen({ navigation, route }: Props) {
           <Pressable
             style={styles.bottomPopupCard}
             onPress={() => openActivityDetails(focusedActivity)}
-            {...bottomCardPanResponder.panHandlers}
           >
             <View style={styles.bottomPopupHeader}>
               <Text style={styles.bottomPopupTitle} numberOfLines={1}>
