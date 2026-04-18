@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Linking, PanResponder, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { Animated, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { LinearGradient } from 'expo-linear-gradient';
+import { BlurView } from 'expo-blur';
 import { StatusBar } from 'expo-status-bar';
 import { StackScreenProps } from '@react-navigation/stack';
 import Svg, { Path } from 'react-native-svg';
@@ -10,6 +12,7 @@ import type { Booking, BookingType, Trip } from '../data/trips';
 import { normalizeLocationText } from '../lib/locationText';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import type { MapPin, RouteSegment, StopActivity } from '../components/tripOverview/types';
+import { ItineraryScreen } from './ItineraryScreen';
 
 type Props = StackScreenProps<RootStackParamList, 'TripDetail'>;
 
@@ -627,7 +630,12 @@ function resolveCoordinates(options: {
   location?: string;
   latitude?: number;
   longitude?: number;
+  allowAirportCodeFallback?: boolean;
+  allowCityFallback?: boolean;
 }): Coordinates | null {
+  const allowAirportCodeFallback = options.allowAirportCodeFallback ?? true;
+  const allowCityFallback = options.allowCityFallback ?? true;
+
   if (
     Number.isFinite(options.latitude) &&
     Number.isFinite(options.longitude) &&
@@ -641,13 +649,17 @@ function resolveCoordinates(options: {
   }
 
   const code = options.code?.trim().toUpperCase();
-  if (code && airportCoordinates[code]) {
+  if (allowAirportCodeFallback && code && airportCoordinates[code]) {
     return airportCoordinates[code];
   }
 
   const directCoordinate = parseCoordinatesFromText(options.location);
   if (directCoordinate) {
     return directCoordinate;
+  }
+
+  if (!allowCityFallback) {
+    return null;
   }
 
   const candidateCities = [
@@ -883,13 +895,14 @@ function buildHotelsMapData(trip: Trip): MapDataset {
         location: booking.activityLocation ?? booking.hotelStay?.address,
       }) ?? locationCity;
     const addressLabel = booking.activityLocation ?? booking.hotelStay?.address;
-    const locationCoords =
-      resolveCoordinates({
-        city: locationCity,
-        location: addressLabel,
-        latitude: booking.latitude,
-        longitude: booking.longitude,
-      }) ?? resolveCountryCoordinates(country);
+    const locationCoords = resolveCoordinates({
+      city: locationCity,
+      location: addressLabel,
+      latitude: booking.latitude,
+      longitude: booking.longitude,
+      allowAirportCodeFallback: false,
+      allowCityFallback: false,
+    });
 
     if (!locationCoords) {
       return;
@@ -954,13 +967,14 @@ function buildIdeasMapData(trip: Trip): MapDataset {
         location: booking.activityLocation ?? booking.hotelStay?.address,
       }) ?? city;
     const addressLabel = booking.activityLocation ?? booking.hotelStay?.address;
-    const coordinates =
-      resolveCoordinates({
-        city,
-        location: addressLabel,
-        latitude: booking.latitude,
-        longitude: booking.longitude,
-      }) ?? resolveCountryCoordinates(country);
+    const coordinates = resolveCoordinates({
+      city,
+      location: addressLabel,
+      latitude: booking.latitude,
+      longitude: booking.longitude,
+      allowAirportCodeFallback: false,
+      allowCityFallback: false,
+    });
     if (!coordinates) {
       return;
     }
@@ -1029,32 +1043,641 @@ function buildCombinedMapData(trip: Trip): MapDataset {
   };
 }
 
-export function TripDetailScreen({ navigation, route }: Props) {
-  const { trips } = useTripsData();
-  const trip = trips.find((item) => item.id === route.params.tripId);
+
+type TripDetailTabKey = 'overview' | 'map' | 'itinerary' | 'currency' | 'docs';
+type EmbeddedItineraryFilter = 'all-types' | 'flights' | 'hotels' | 'sightseeing' | 'activities' | 'food';
+
+type ExchangeRatesPayload = {
+  result?: string;
+  rates?: Record<string, number>;
+};
+
+type ExchangeRateCacheEntry = {
+  fetchedAt: number;
+  rates: Record<string, number>;
+};
+
+type OverviewFlight = {
+  booking: Booking;
+  departureDate: Date | null;
+  departureDateLabel: string;
+  departureTimeLabel: string;
+  routeLabel: string;
+};
+
+type OverviewHotel = {
+  booking: Booking;
+  checkInDate: Date | null;
+  checkInLabel: string;
+  locationLabel: string;
+};
+
+type DocItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  icon: string;
+};
+
+const monthLabelToIndex: Record<string, number> = {
+  Jan: 0,
+  Feb: 1,
+  Mar: 2,
+  Apr: 3,
+  May: 4,
+  Jun: 5,
+  Jul: 6,
+  Aug: 7,
+  Sep: 8,
+  Oct: 9,
+  Nov: 10,
+  Dec: 11,
+};
+
+const detailTabs: Array<{ key: TripDetailTabKey; label: string }> = [
+  { key: 'overview', label: 'Overview' },
+  { key: 'map', label: 'Map' },
+  { key: 'itinerary', label: 'Itinerary' },
+  { key: 'currency', label: 'Currency' },
+  { key: 'docs', label: 'Docs' },
+];
+
+const countryToCurrency: Record<string, string> = {
+  Canada: 'CAD',
+  Japan: 'JPY',
+  Singapore: 'SGD',
+  Thailand: 'THB',
+  Vietnam: 'VND',
+  'United States': 'USD',
+};
+
+const currencyNames: Record<string, string> = {
+  CAD: 'Canadian Dollar',
+  JPY: 'Japanese Yen',
+  SGD: 'Singapore Dollar',
+  THB: 'Thai Baht',
+  VND: 'Vietnamese Dong',
+  USD: 'US Dollar',
+};
+
+const exchangeRateCache = new Map<string, ExchangeRateCacheEntry>();
+
+const design = {
+  backgroundGradient: ['#c8e6d4', '#a8d4bc', '#b8dcc8'] as const,
+  screenTitle: '#0f2d1e',
+  bodyText: '#1a4a33',
+  mutedText: '#3a6b52',
+  border: 'rgba(255,255,255,0.7)',
+  borderSoft: 'rgba(255,255,255,0.6)',
+  glass: 'rgba(255,255,255,0.45)',
+  glassStrong: 'rgba(255,255,255,0.55)',
+  flight: '#534AB7',
+  hotel: '#185FA5',
+  activity: '#1D9E75',
+  docs: '#BA7517',
+};
+
+function parseMonthDayLabel(dateLabel?: string): { month: number; day: number } | null {
+  if (!dateLabel) {
+    return null;
+  }
+
+  const match = dateLabel.trim().match(/^([A-Za-z]{3})\s+(\d{1,2})$/);
+  if (!match?.[1] || !match[2]) {
+    return null;
+  }
+
+  const month = monthLabelToIndex[match[1]];
+  const day = Number(match[2]);
+
+  if (month === undefined || Number.isNaN(day)) {
+    return null;
+  }
+
+  return { month, day };
+}
+
+function parseDateRangeYear(dateRange: string): number {
+  const yearMatches = dateRange.match(/\b(20\d{2})\b/g);
+  if (yearMatches && yearMatches.length > 0) {
+    return Number(yearMatches[yearMatches.length - 1]);
+  }
+  return new Date().getFullYear();
+}
+
+function parseTripDateLabel(dateLabel: string | undefined, tripYear: number): Date | null {
+  const parsedMonthDay = parseMonthDayLabel(dateLabel);
+  if (!parsedMonthDay) {
+    return null;
+  }
+
+  const parsed = new Date(tripYear, parsedMonthDay.month, parsedMonthDay.day);
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+}
+
+function parseTripRangeBounds(dateRange: string): { start: Date; end: Date } | null {
+  const sameMonthMatch = dateRange.match(/^([A-Za-z]{3})\s+(\d{1,2})\s*[–-]\s*(\d{1,2}),\s*(\d{4})$/);
+  if (sameMonthMatch?.[1] && sameMonthMatch[2] && sameMonthMatch[3] && sameMonthMatch[4]) {
+    const month = monthLabelToIndex[sameMonthMatch[1]];
+    const startDay = Number(sameMonthMatch[2]);
+    const endDay = Number(sameMonthMatch[3]);
+    const year = Number(sameMonthMatch[4]);
+    if (month === undefined || Number.isNaN(startDay) || Number.isNaN(endDay) || Number.isNaN(year)) {
+      return null;
+    }
+
+    const start = new Date(year, month, startDay);
+    const end = new Date(year, month, endDay);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    return { start, end };
+  }
+
+  const crossMonthMatch = dateRange.match(/^([A-Za-z]{3})\s+(\d{1,2})\s*[–-]\s*([A-Za-z]{3})\s+(\d{1,2}),\s*(\d{4})$/);
+  if (crossMonthMatch?.[1] && crossMonthMatch[2] && crossMonthMatch[3] && crossMonthMatch[4] && crossMonthMatch[5]) {
+    const startMonth = monthLabelToIndex[crossMonthMatch[1]];
+    const startDay = Number(crossMonthMatch[2]);
+    const endMonth = monthLabelToIndex[crossMonthMatch[3]];
+    const endDay = Number(crossMonthMatch[4]);
+    const year = Number(crossMonthMatch[5]);
+
+    if (
+      startMonth === undefined ||
+      endMonth === undefined ||
+      Number.isNaN(startDay) ||
+      Number.isNaN(endDay) ||
+      Number.isNaN(year)
+    ) {
+      return null;
+    }
+
+    const start = new Date(year, startMonth, startDay);
+    const end = new Date(year, endMonth, endDay);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(0, 0, 0, 0);
+    return { start, end };
+  }
+
+  return null;
+}
+
+function buildTripHeaderSubtitle(trip: Trip): string {
+  const bounds = parseTripRangeBounds(trip.dateRange);
+  if (!bounds) {
+    return trip.dateRange;
+  }
+
+  const dayCount = Math.floor((bounds.end.getTime() - bounds.start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+  return `${trip.dateRange} · ${dayCount} ${dayCount === 1 ? 'day' : 'days'}`;
+}
+
+function getDaysFromToday(date: Date | null): number | null {
+  if (!date) {
+    return null;
+  }
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  return Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+function buildFlightRouteLabel(booking: Booking): string {
+  if (booking.legs.length === 0) {
+    return booking.label;
+  }
+
+  const chain: string[] = [];
+  const firstFrom = booking.legs[0]?.fromCode?.trim().toUpperCase();
+  if (firstFrom) {
+    chain.push(firstFrom);
+  }
+
+  booking.legs.forEach((leg) => {
+    const toCode = leg.toCode?.trim().toUpperCase();
+    if (!toCode) {
+      return;
+    }
+    if (chain[chain.length - 1] !== toCode) {
+      chain.push(toCode);
+    }
+  });
+
+  return chain.length > 0 ? chain.join(' → ') : booking.label;
+}
+
+function buildOverviewFlights(trip: Trip): OverviewFlight[] {
+  const tripYear = parseDateRangeYear(trip.dateRange);
+
+  return trip.bookings
+    .filter((booking) => booking.type === 'flight')
+    .map((booking) => {
+      const firstLeg = booking.legs[0];
+      const departureDateLabel = firstLeg?.departureDate ?? 'TBD';
+      const departureDate = parseTripDateLabel(firstLeg?.departureDate, tripYear);
+      const departureTimeLabel = firstLeg?.departureTime ?? 'TBD';
+      const routeLabel = buildFlightRouteLabel(booking);
+
+      return {
+        booking,
+        departureDate,
+        departureDateLabel,
+        departureTimeLabel,
+        routeLabel,
+      };
+    })
+    .sort((a, b) => {
+      const aTime = a.departureDate?.getTime() ?? Number.POSITIVE_INFINITY;
+      const bTime = b.departureDate?.getTime() ?? Number.POSITIVE_INFINITY;
+      return aTime - bTime;
+    });
+}
+
+function buildOverviewHotels(trip: Trip): OverviewHotel[] {
+  const tripYear = parseDateRangeYear(trip.dateRange);
+
+  return trip.bookings
+    .filter((booking) => booking.type === 'hotel')
+    .map((booking) => {
+      const checkInLabel = booking.hotelStay?.checkInDate ?? booking.activityDate ?? 'TBD';
+      const checkInDate = parseTripDateLabel(checkInLabel, tripYear);
+      const locationLabel = booking.hotelStay?.city ?? getCityFromLocation(booking.activityLocation) ?? trip.title;
+
+      return {
+        booking,
+        checkInDate,
+        checkInLabel,
+        locationLabel,
+      };
+    })
+    .sort((a, b) => {
+      const aTime = a.checkInDate?.getTime() ?? Number.POSITIVE_INFINITY;
+      const bTime = b.checkInDate?.getTime() ?? Number.POSITIVE_INFINITY;
+      return aTime - bTime;
+    });
+}
+
+function collectCountriesInTripOrder(mapData: MapDataset): string[] {
+  const allActivities = mapData.pins
+    .flatMap((pin) => pin.activities)
+    .slice()
+    .sort((a, b) => a.order - b.order);
+
+  const seen = new Set<string>();
+  const ordered: string[] = [];
+
+  allActivities.forEach((activity) => {
+    const country = activity.country?.trim();
+    if (!country) {
+      return;
+    }
+
+    const normalized = country.toLowerCase();
+    if (seen.has(normalized)) {
+      return;
+    }
+
+    seen.add(normalized);
+    ordered.push(country);
+  });
+
+  return ordered;
+}
+
+function collectDestinationCurrencies(countries: string[]): string[] {
+  const seen = new Set<string>();
+  const currencies: string[] = [];
+
+  countries.forEach((country) => {
+    const currency = countryToCurrency[country];
+    if (!currency || currency === 'CAD' || seen.has(currency)) {
+      return;
+    }
+
+    seen.add(currency);
+    currencies.push(currency);
+  });
+
+  return currencies;
+}
+
+function formatCurrencyAmount(value: number, currencyCode: string): string {
+  try {
+    return new Intl.NumberFormat('en-CA', {
+      style: 'currency',
+      currency: currencyCode,
+      maximumFractionDigits: currencyCode === 'JPY' || currencyCode === 'VND' ? 0 : 2,
+    }).format(value);
+  } catch {
+    return `${currencyCode} ${value.toFixed(2)}`;
+  }
+}
+
+function minutesSince(timestamp: number): number {
+  return Math.max(0, Math.floor((Date.now() - timestamp) / (1000 * 60)));
+}
+
+function categoryToneForActivity(activity: StopActivity): { label: string; bg: string; text: string } {
+  if (activity.bookingType === 'flight') {
+    return { label: 'Flight', bg: '#EEEDFE', text: '#3C3489' };
+  }
+
+  if (activity.bookingType === 'hotel') {
+    return { label: 'Hotel', bg: '#E6F1FB', text: '#0C447C' };
+  }
+
+  const experience = getExperienceType(activity);
+  if (experience === 'food') {
+    return { label: 'Food', bg: '#FAECE7', text: '#4A1B0C' };
+  }
+  if (experience === 'activities') {
+    return { label: 'Activities', bg: '#E1F5EE', text: '#085041' };
+  }
+
+  return { label: 'Sightseeing', bg: '#E1F5EE', text: '#085041' };
+}
+
+function buildDocsList(trip: Trip, countries: string[]): DocItem[] {
+  const destinationCountries = countries.filter((country) => country.toLowerCase() !== 'canada');
+  const eVisaDocs = destinationCountries.map((country) => ({
+    id: `visa-${country.toLowerCase().replace(/[^a-z0-9]/g, '-')}`,
+    title: `${country} e-visa`,
+    subtitle: 'Linked travel authorization',
+    icon: '📄',
+  }));
+
+  const flightCount = trip.bookings.filter((booking) => booking.type === 'flight').length;
+  const hotelCount = trip.bookings.filter((booking) => booking.type === 'hotel').length;
+
+  return [
+    {
+      id: 'passport',
+      title: 'Passport',
+      subtitle: 'Expiry check recommended',
+      icon: '🛂',
+    },
+    ...eVisaDocs,
+    {
+      id: 'insurance',
+      title: 'Travel insurance',
+      subtitle: 'Policy details attached',
+      icon: '🛡️',
+    },
+    {
+      id: 'bookings',
+      title: 'Booking confirmations',
+      subtitle: `${flightCount} flights · ${hotelCount} hotels`,
+      icon: '📁',
+    },
+  ];
+}
+
+function FrostedSurface({
+  children,
+  style,
+  tint = design.glass,
+}: {
+  children?: ReactNode;
+  style?: object;
+  tint?: string;
+}) {
+  return (
+    <View style={[style, { overflow: 'hidden' }]}> 
+      <BlurView intensity={32} tint="light" style={StyleSheet.absoluteFill} />
+      <View style={[StyleSheet.absoluteFill, { backgroundColor: tint }]} />
+      {children}
+    </View>
+  );
+}
+
+function ChevronLeftIcon() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <Path d="M15 18L9 12L15 6" stroke="#0f2d1e" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function ChevronRightIcon() {
+  return (
+    <Svg width={14} height={14} viewBox="0 0 24 24" fill="none">
+      <Path d="M9 18L15 12L9 6" stroke="#0f2d1e" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" />
+    </Svg>
+  );
+}
+
+function OverviewPlaneIcon() {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M3 12H9L20 6.5V9.3L14.5 12L20 14.7V17.5L9 12H3Z"
+        stroke="#534AB7"
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function OverviewHotelIcon() {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path
+        d="M3 20V9.6C3 9.2 3.2 8.8 3.5 8.6L11.4 2.9C11.8 2.6 12.3 2.6 12.7 2.9L20.5 8.6C20.8 8.8 21 9.2 21 9.6V20H16V14.6C16 14 15.6 13.5 15 13.5H9C8.4 13.5 8 14 8 14.6V20H3Z"
+        stroke="#185FA5"
+        strokeWidth={1.8}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
+}
+
+function OverviewGlobeIcon() {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 2.5C17.2 2.5 21.5 6.8 21.5 12C21.5 17.2 17.2 21.5 12 21.5C6.8 21.5 2.5 17.2 2.5 12C2.5 6.8 6.8 2.5 12 2.5Z" stroke="#1D9E75" strokeWidth={1.8} />
+      <Path d="M2.8 12H21.2" stroke="#1D9E75" strokeWidth={1.6} strokeLinecap="round" />
+      <Path d="M12 2.8C14.4 5.2 15.8 8.5 15.8 12C15.8 15.5 14.4 18.8 12 21.2" stroke="#1D9E75" strokeWidth={1.6} strokeLinecap="round" />
+      <Path d="M12 2.8C9.6 5.2 8.2 8.5 8.2 12C8.2 15.5 9.6 18.8 12 21.2" stroke="#1D9E75" strokeWidth={1.6} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function OverviewDocIcon() {
+  return (
+    <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
+      <Path d="M7 3.5H13.5L18 8V20.5H7V3.5Z" stroke="#BA7517" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M13.5 3.5V8H18" stroke="#BA7517" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" />
+      <Path d="M9.8 12H15.2" stroke="#BA7517" strokeWidth={1.6} strokeLinecap="round" />
+      <Path d="M9.8 15.5H13.8" stroke="#BA7517" strokeWidth={1.6} strokeLinecap="round" />
+    </Svg>
+  );
+}
+
+function TileActionArrow({ onPress }: { onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} style={({ pressed }) => [styles.tileArrowButton, pressed ? styles.pressScale : null]}>
+      <FrostedSurface style={styles.tileArrowInner} tint={design.glassStrong}>
+        <ChevronRightIcon />
+      </FrostedSurface>
+    </Pressable>
+  );
+}
+
+function OverviewTabContent(props: {
+  trip: Trip;
+  mapData: MapDataset;
+  destinationCurrencies: string[];
+  destinationCountries: string[];
+  docsCount: number;
+  onOpenMap: () => void;
+  onOpenCurrency: () => void;
+  onOpenDocs: () => void;
+  onOpenItineraryFlights: () => void;
+  onOpenItineraryHotels: () => void;
+}) {
+  const overviewFlights = useMemo(() => buildOverviewFlights(props.trip), [props.trip]);
+  const overviewHotels = useMemo(() => buildOverviewHotels(props.trip), [props.trip]);
+
+  const nextFlight = useMemo(() => {
+    if (overviewFlights.length === 0) {
+      return null;
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return overviewFlights.find((flight) => flight.departureDate && flight.departureDate.getTime() >= today.getTime()) ?? overviewFlights[0];
+  }, [overviewFlights]);
+
+  const firstHotel = overviewHotels[0] ?? null;
+  const mapCountryCount = props.destinationCountries.length;
+
+  return (
+    <ScrollView
+      style={styles.tabScroll}
+      contentContainerStyle={styles.overviewScrollContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <Pressable onPress={props.onOpenItineraryFlights} style={({ pressed }) => [styles.tilePressWrap, pressed ? styles.pressScale : null]}>
+        <FrostedSurface style={styles.overviewTile}>
+          <View style={styles.tileMainRow}>
+            <View style={[styles.tileBadge, { backgroundColor: 'rgba(83,74,183,0.12)' }]}> 
+              <OverviewPlaneIcon />
+            </View>
+
+            <View style={styles.tileBody}>
+              <Text style={styles.tileTitle}>
+                {nextFlight ? `Next flight in ${Math.max(0, getDaysFromToday(nextFlight.departureDate) ?? 0)} days` : 'No flights booked yet'}
+              </Text>
+              <Text style={styles.tileSubtitle} numberOfLines={1}>
+                {nextFlight
+                  ? `${nextFlight.routeLabel} · ${nextFlight.departureDateLabel} ${nextFlight.departureTimeLabel}`
+                  : 'Add a flight to see it here'}
+              </Text>
+            </View>
+
+            <TileActionArrow onPress={props.onOpenItineraryFlights} />
+          </View>
+        </FrostedSurface>
+      </Pressable>
+
+      <Pressable onPress={props.onOpenItineraryHotels} style={({ pressed }) => [styles.tilePressWrap, pressed ? styles.pressScale : null]}>
+        <FrostedSurface style={styles.overviewTile}>
+          <View style={styles.tileMainRow}>
+            <View style={[styles.tileBadge, { backgroundColor: 'rgba(24,95,165,0.12)' }]}> 
+              <OverviewHotelIcon />
+            </View>
+
+            <View style={styles.tileBody}>
+              <Text style={styles.tileTitle}>{firstHotel ? 'First hotel stay' : 'No hotels booked yet'}</Text>
+              <Text style={styles.tileSubtitle} numberOfLines={1}>
+                {firstHotel
+                  ? `${firstHotel.booking.hotelStay?.name ?? firstHotel.booking.label} · ${firstHotel.locationLabel} · ${firstHotel.checkInLabel}`
+                  : 'Add accommodation to see it here'}
+              </Text>
+            </View>
+
+            <TileActionArrow onPress={props.onOpenItineraryHotels} />
+          </View>
+        </FrostedSurface>
+      </Pressable>
+
+      <Pressable onPress={props.onOpenCurrency} style={({ pressed }) => [styles.tilePressWrap, pressed ? styles.pressScale : null]}>
+        <FrostedSurface style={styles.overviewTile}>
+          <View style={styles.currencyTileHeader}>
+            <Text style={styles.currencyTileLabel}>Currency converter</Text>
+            <Text style={styles.currencyTileMeta}>{`${props.destinationCurrencies.length} currencies`}</Text>
+          </View>
+
+          <View style={styles.currencyPreviewRow}>
+            <FrostedSurface style={styles.currencyPreviewBox} tint="rgba(255,255,255,0.6)">
+              <Text style={styles.currencyCode}>CAD</Text>
+              <Text style={styles.currencyAmount}>1.00</Text>
+            </FrostedSurface>
+
+            {props.destinationCurrencies.slice(0, 3).map((currency) => (
+              <View key={`overview-currency-${currency}`} style={styles.currencyPreviewPair}>
+                <Text style={styles.currencyArrow}>→</Text>
+                <FrostedSurface style={styles.currencyPreviewBox} tint="rgba(255,255,255,0.6)">
+                  <Text style={styles.currencyCode}>{currency}</Text>
+                  <Text style={styles.currencyAmount}>...</Text>
+                </FrostedSurface>
+              </View>
+            ))}
+          </View>
+        </FrostedSurface>
+      </Pressable>
+
+      <Pressable onPress={props.onOpenMap} style={({ pressed }) => [styles.tilePressWrap, pressed ? styles.pressScale : null]}>
+        <FrostedSurface style={styles.overviewTile}>
+          <View style={styles.tileMainRow}>
+            <View style={[styles.tileBadge, { backgroundColor: 'rgba(29,158,117,0.12)' }]}> 
+              <OverviewGlobeIcon />
+            </View>
+
+            <View style={styles.tileBody}>
+              <Text style={styles.tileTitle}>Trip map</Text>
+              <Text style={styles.tileSubtitle}>{`${mapCountryCount} countries · ${props.mapData.pins.length} pins`}</Text>
+            </View>
+
+            <TileActionArrow onPress={props.onOpenMap} />
+          </View>
+        </FrostedSurface>
+      </Pressable>
+
+      <Pressable onPress={props.onOpenDocs} style={({ pressed }) => [styles.tilePressWrap, pressed ? styles.pressScale : null]}>
+        <FrostedSurface style={styles.overviewTile}>
+          <View style={styles.tileMainRow}>
+            <View style={[styles.tileBadge, { backgroundColor: 'rgba(186,117,23,0.12)' }]}> 
+              <OverviewDocIcon />
+            </View>
+
+            <View style={styles.tileBody}>
+              <Text style={styles.tileTitle}>Docs & visas</Text>
+              <Text style={styles.tileSubtitle}>{`Passport · ${props.docsCount} e-visas`}</Text>
+            </View>
+
+            <TileActionArrow onPress={props.onOpenDocs} />
+          </View>
+        </FrostedSurface>
+      </Pressable>
+    </ScrollView>
+  );
+}
+
+function MapTabContent(props: {
+  trip: Trip;
+  navigation: Props['navigation'];
+  fullScreen?: boolean;
+}) {
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
-  const [flightLegIndex, setFlightLegIndex] = useState(0);
-  const [flightPagerWidth, setFlightPagerWidth] = useState(0);
-  const sheetTranslate = useRef(new Animated.Value(0)).current;
-  const flightPagerRef = useRef<ScrollView | null>(null);
-  const hasInitializedSelectionRef = useRef(false);
 
-  const sheetSnapOpen = 0;
-  const sheetSnapClosed = 186;
-
-  const animateSheetTo = (nextValue: number) => {
-    Animated.spring(sheetTranslate, {
-      toValue: nextValue,
-      useNativeDriver: true,
-      damping: 24,
-      stiffness: 220,
-      mass: 0.85,
-    }).start();
-  };
-
-  const mapData = useMemo(() => (trip ? buildCombinedMapData(trip) : { pins: [], routeSegments: [] }), [trip]);
+  const mapData = useMemo(() => buildCombinedMapData(props.trip), [props.trip]);
 
   const filteredMapData = useMemo<MapDataset>(() => {
     const pins = mapData.pins
@@ -1065,6 +1688,7 @@ export function TripDetailScreen({ navigation, route }: Props) {
         }
 
         const status = activities.some((activity) => activity.status === 'booked') ? 'booked' : 'not_booked';
+
         return {
           ...pin,
           activities,
@@ -1074,32 +1698,22 @@ export function TripDetailScreen({ navigation, route }: Props) {
       })
       .filter((pin): pin is MapPin => Boolean(pin));
 
-    const routeSegments =
-      activeFilter === 'all' || activeFilter === 'flights'
-        ? mapData.routeSegments
-        : [];
+    const routeSegments = activeFilter === 'all' || activeFilter === 'flights' ? mapData.routeSegments : [];
 
     return { pins, routeSegments };
   }, [activeFilter, mapData.pins, mapData.routeSegments]);
 
   useEffect(() => {
-    if (filteredMapData.pins.length === 0) {
-      setSelectedPinId(null);
+    if (!selectedPinId) {
       return;
     }
 
-    setSelectedPinId((previous) => {
-      if (!previous) {
-        if (!hasInitializedSelectionRef.current) {
-          hasInitializedSelectionRef.current = true;
-          return filteredMapData.pins[0]?.id ?? null;
-        }
-        return previous;
-      }
-
-      return filteredMapData.pins.some((pin) => pin.id === previous) ? previous : filteredMapData.pins[0]?.id ?? null;
-    });
-  }, [filteredMapData.pins]);
+    const selectedPinStillVisible = filteredMapData.pins.some((pin) => pin.id === selectedPinId);
+    if (!selectedPinStillVisible) {
+      setSelectedPinId(null);
+      setSelectedActivityId(null);
+    }
+  }, [filteredMapData.pins, selectedPinId]);
 
   const selectedPin = useMemo(() => {
     if (!selectedPinId) {
@@ -1124,74 +1738,25 @@ export function TripDetailScreen({ navigation, route }: Props) {
     return getDefaultActivityForPin(selectedPin);
   }, [selectedActivityId, selectedPin]);
 
-  useEffect(() => {
-    animateSheetTo(focusedActivity ? sheetSnapOpen : sheetSnapClosed);
-  }, [focusedActivity?.id]);
-
-  useEffect(() => {
-    if (!selectedPin || selectedPin.activities.length === 0) {
-      setSelectedActivityId(null);
-      return;
-    }
-
-    setSelectedActivityId((previous) =>
-      previous && selectedPin.activities.some((activity) => activity.id === previous)
-        ? previous
-        : getDefaultActivityForPin(selectedPin)?.id ?? null
-    );
-  }, [selectedPin]);
-
-  const swipeActivities = useMemo(
-    () => (focusedActivity ? getSwipeActivities(filteredMapData.pins, getSwipeGroup(focusedActivity)) : []),
-    [filteredMapData.pins, focusedActivity?.id]
-  );
-
-  const activeSwipeIndex = useMemo(() => {
-    if (!focusedActivity || swipeActivities.length === 0) {
-      return 0;
-    }
-    const exact = swipeActivities.findIndex((activity) => activity.id === focusedActivity.id);
-    if (exact >= 0) {
-      return exact;
-    }
-    const normalizedFocused = focusedActivity.id.replace(/-(from|to)$/i, '');
-    const byFlightPair = swipeActivities.findIndex(
-      (activity) => activity.id.replace(/-(from|to)$/i, '') === normalizedFocused
-    );
-    return byFlightPair >= 0 ? byFlightPair : 0;
-  }, [focusedActivity?.id, swipeActivities]);
-
-  useEffect(() => {
-    setFlightLegIndex(activeSwipeIndex);
-  }, [activeSwipeIndex, focusedActivity?.id]);
-
-  useEffect(() => {
-    if (flightPagerWidth <= 0 || !flightPagerRef.current) {
-      return;
-    }
-    const targetX = flightLegIndex * flightPagerWidth;
-    flightPagerRef.current.scrollTo({ x: targetX, y: 0, animated: false });
-  }, [flightLegIndex, flightPagerWidth, swipeActivities.length]);
-
   const openActivityDetails = (activity: StopActivity) => {
     if (activity.bookingType === 'flight') {
-      navigation.navigate('FlightDetail', {
-        tripId: trip.id,
+      props.navigation.navigate('FlightDetail', {
+        tripId: props.trip.id,
         flightId: activity.bookingId,
       });
       return;
     }
 
     if (activity.bookingType === 'hotel') {
-      navigation.navigate('HotelDetail', {
-        tripId: trip.id,
+      props.navigation.navigate('HotelDetail', {
+        tripId: props.trip.id,
         bookingId: activity.bookingId,
       });
       return;
     }
 
-    navigation.navigate('EventDetail', {
-      tripId: trip.id,
+    props.navigation.navigate('EventDetail', {
+      tripId: props.trip.id,
       bookingId: activity.bookingId,
     });
   };
@@ -1209,27 +1774,321 @@ export function TripDetailScreen({ navigation, route }: Props) {
     });
   };
 
-  const panResponder = useMemo(
-    () =>
-      PanResponder.create({
-        onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 8,
-        onPanResponderGrant: () => {},
-        onPanResponderMove: () => {},
-        onPanResponderRelease: () => {
-          animateSheetTo(sheetSnapOpen);
-        },
-      }),
-    [sheetTranslate]
+  return (
+    <View style={[styles.mapTabRoot, props.fullScreen ? styles.mapTabRootFullScreen : null]}>
+      <ScrollView
+        horizontal={true}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={[styles.mapFilterRow, props.fullScreen ? styles.mapFilterRowFullScreen : null]}
+      >
+        {FILTER_OPTIONS.map((option) => {
+          const active = activeFilter === option.key;
+          const tint = getFilterTint(option.key, active);
+
+          return (
+            <Pressable
+              key={`map-filter-${option.key}`}
+              onPress={() => setActiveFilter(option.key)}
+              style={({ pressed }) => [styles.mapFilterPress, pressed ? styles.pressScale : null]}
+            >
+              <FrostedSurface
+                style={[
+                  styles.mapFilterChip,
+                  {
+                    backgroundColor: tint.bg,
+                    borderColor: active ? tint.text : tint.border,
+                  },
+                ]}
+                tint={active ? tint.bg : 'rgba(255,255,255,0.35)'}
+              >
+                <Text style={[styles.mapFilterText, { color: tint.text }]}>{option.label}</Text>
+              </FrostedSurface>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      <View style={[styles.mapPaneWrap, props.fullScreen ? styles.mapPaneWrapFullScreen : null]}>
+        <TripMap
+          pins={filteredMapData.pins}
+          routeSegments={filteredMapData.routeSegments}
+          selectedPinId={selectedPin?.id ?? null}
+          focusedPin={selectedPin}
+          focusedActivity={focusedActivity}
+          onPinPress={(pin) => {
+            setSelectedPinId(pin.id);
+            setSelectedActivityId(getDefaultActivityForPin(pin)?.id ?? null);
+          }}
+          onMapPress={() => {
+            setSelectedPinId(null);
+            setSelectedActivityId(null);
+          }}
+        />
+
+        {focusedActivity ? (
+          <View style={styles.mapDetailOverlay} pointerEvents="box-none">
+            <FrostedSurface style={styles.mapDetailCard} tint="rgba(255,255,255,0.55)">
+              <View style={styles.mapDetailHeaderRow}>
+                <View style={styles.mapDetailTextWrap}>
+                  <Text style={styles.mapDetailTitle} numberOfLines={1}>
+                    {focusedActivity.name}
+                  </Text>
+                  <Text style={styles.mapDetailSubtitle} numberOfLines={1}>
+                    {[focusedActivity.city, focusedActivity.country].filter(Boolean).join(' · ')}
+                  </Text>
+                </View>
+
+                {(() => {
+                  const tone = categoryToneForActivity(focusedActivity);
+                  return (
+                    <View style={[styles.mapCategoryTag, { backgroundColor: tone.bg }]}> 
+                      <Text style={[styles.mapCategoryTagText, { color: tone.text }]}>{tone.label}</Text>
+                    </View>
+                  );
+                })()}
+              </View>
+
+              {selectedPin && selectedPin.activities.length > 1 ? (
+                <ScrollView horizontal={true} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.mapActivitySwitchRow}>
+                  {selectedPin.activities.map((activity) => {
+                    const isActive = focusedActivity.id === activity.id;
+                    return (
+                      <Pressable
+                        key={`activity-select-${activity.id}`}
+                        onPress={() => setSelectedActivityId(activity.id)}
+                        style={({ pressed }) => [styles.mapActivityChipPress, pressed ? styles.pressScale : null]}
+                      >
+                        <FrostedSurface
+                          style={[
+                            styles.mapActivityChip,
+                            isActive ? styles.mapActivityChipActive : styles.mapActivityChipInactive,
+                          ]}
+                          tint={isActive ? 'rgba(15,45,30,0.85)' : 'rgba(255,255,255,0.6)'}
+                        >
+                          <Text style={[styles.mapActivityChipText, isActive ? styles.mapActivityChipTextActive : null]} numberOfLines={1}>
+                            {activity.name}
+                          </Text>
+                        </FrostedSurface>
+                      </Pressable>
+                    );
+                  })}
+                </ScrollView>
+              ) : null}
+
+              <View style={styles.mapActionRow}>
+                <Pressable onPress={() => openActivityDetails(focusedActivity)} style={({ pressed }) => [styles.mapActionPress, pressed ? styles.pressScale : null]}>
+                  <FrostedSurface style={styles.mapActionSecondary} tint="rgba(255,255,255,0.62)">
+                    <Text style={styles.mapActionSecondaryText}>Details</Text>
+                  </FrostedSurface>
+                </Pressable>
+
+                <Pressable onPress={() => openInMaps(focusedActivity)} style={({ pressed }) => [styles.mapActionPress, pressed ? styles.pressScale : null]}>
+                  <FrostedSurface style={styles.mapActionPrimary} tint="rgba(15,45,30,0.82)">
+                    <Text style={styles.mapActionPrimaryText}>Open Maps</Text>
+                  </FrostedSurface>
+                </Pressable>
+              </View>
+            </FrostedSurface>
+          </View>
+        ) : null}
+      </View>
+    </View>
   );
+}
+
+function CurrencyTabContent(props: {
+  destinationCurrencies: string[];
+  baseAmountInput: string;
+  onBaseAmountChange: (value: string) => void;
+  ratesLoading: boolean;
+  ratesError: string | null;
+  rates: Record<string, number> | null;
+  ratesFetchedAt: number | null;
+  onRetry: () => void;
+}) {
+  const parsedBaseAmount = Number.parseFloat(props.baseAmountInput);
+  const baseAmount = Number.isFinite(parsedBaseAmount) ? parsedBaseAmount : 0;
+
+  return (
+    <ScrollView style={styles.tabScroll} contentContainerStyle={styles.currencyScrollContent} showsVerticalScrollIndicator={false}>
+      <FrostedSurface style={styles.currencyInputTile}>
+        <Text style={styles.currencyInputLabel}>Base amount (CAD)</Text>
+        <TextInput
+          value={props.baseAmountInput}
+          onChangeText={props.onBaseAmountChange}
+          keyboardType="decimal-pad"
+          style={styles.currencyInput}
+          placeholder="1.00"
+          placeholderTextColor="rgba(58,107,82,0.6)"
+        />
+        <Text style={styles.currencyUpdatedLabel}>
+          {props.ratesFetchedAt
+            ? `Last updated ${minutesSince(props.ratesFetchedAt)} min ago`
+            : props.ratesLoading
+              ? 'Fetching latest rates...'
+              : 'Rates unavailable'}
+        </Text>
+      </FrostedSurface>
+
+      {props.ratesError ? (
+        <Pressable onPress={props.onRetry} style={({ pressed }) => [styles.tilePressWrap, pressed ? styles.pressScale : null]}>
+          <FrostedSurface style={styles.currencyErrorTile} tint="rgba(255,245,245,0.75)">
+            <Text style={styles.currencyErrorText}>Couldn't load exchange rates — tap to retry</Text>
+          </FrostedSurface>
+        </Pressable>
+      ) : null}
+
+      {props.destinationCurrencies.map((currencyCode) => {
+        const rate = props.rates?.[currencyCode];
+        const convertedValue = rate ? baseAmount * rate : null;
+        return (
+          <FrostedSurface key={`currency-row-${currencyCode}`} style={styles.currencyResultTile}>
+            <View style={styles.currencyResultTopRow}>
+              <Text style={styles.currencyResultCode}>{currencyCode}</Text>
+              <Text style={styles.currencyResultName}>{currencyNames[currencyCode] ?? 'Currency'}</Text>
+            </View>
+            <Text style={styles.currencyResultAmount}>
+              {convertedValue !== null ? formatCurrencyAmount(convertedValue, currencyCode) : 'Unavailable'}
+            </Text>
+          </FrostedSurface>
+        );
+      })}
+    </ScrollView>
+  );
+}
+
+function DocsTabContent({ docs }: { docs: DocItem[] }) {
+  return (
+    <ScrollView style={styles.tabScroll} contentContainerStyle={styles.docsScrollContent} showsVerticalScrollIndicator={false}>
+      <View style={styles.docsHeaderRow}>
+        <Text style={styles.docsHeaderTitle}>Travel docs</Text>
+        <Pressable style={({ pressed }) => [styles.docsAddPress, pressed ? styles.pressScale : null]}>
+          <FrostedSurface style={styles.docsAddButton}>
+            <Text style={styles.docsAddText}>+</Text>
+          </FrostedSurface>
+        </Pressable>
+      </View>
+
+      {docs.map((doc) => (
+        <FrostedSurface key={doc.id} style={styles.docTile}>
+          <View style={styles.docIconWrap}>
+            <Text style={styles.docIcon}>{doc.icon}</Text>
+          </View>
+          <View style={styles.docTextWrap}>
+            <Text style={styles.docTitle}>{doc.title}</Text>
+            <Text style={styles.docSubtitle}>{doc.subtitle}</Text>
+          </View>
+        </FrostedSurface>
+      ))}
+    </ScrollView>
+  );
+}
+
+export function TripDetailScreen({ navigation, route }: Props) {
+  const { trips, isLoading } = useTripsData();
+  const trip = trips.find((item) => item.id === route.params.tripId);
+
+  const [activeTab, setActiveTab] = useState<TripDetailTabKey>('overview');
+  const [itineraryInitialType, setItineraryInitialType] = useState<EmbeddedItineraryFilter>('all-types');
+  const [baseAmountInput, setBaseAmountInput] = useState('1');
+  const [rates, setRates] = useState<Record<string, number> | null>(null);
+  const [ratesFetchedAt, setRatesFetchedAt] = useState<number | null>(null);
+  const [ratesLoading, setRatesLoading] = useState(false);
+  const [ratesError, setRatesError] = useState<string | null>(null);
+  const tabContentOpacity = useRef(new Animated.Value(1)).current;
+
+  const mapData = useMemo(() => (trip ? buildCombinedMapData(trip) : { pins: [], routeSegments: [] }), [trip]);
+
+  const destinationCountries = useMemo(() => collectCountriesInTripOrder(mapData), [mapData]);
+  const destinationCurrencies = useMemo(() => collectDestinationCurrencies(destinationCountries), [destinationCountries]);
+  const docs = useMemo(() => (trip ? buildDocsList(trip, destinationCountries) : []), [destinationCountries, trip]);
+  const docsCount = useMemo(
+    () => docs.filter((doc) => doc.id.startsWith('visa-')).length,
+    [docs]
+  );
+
+  const tripSubtitle = useMemo(() => (trip ? buildTripHeaderSubtitle(trip) : ''), [trip]);
+  const activeTabLabel = useMemo(() => detailTabs.find((tab) => tab.key === activeTab)?.label ?? '', [activeTab]);
+  const showingFullScreenTab = activeTab !== 'overview';
+
+  const animateTabSwitch = (nextTab: TripDetailTabKey) => {
+    if (nextTab === activeTab) {
+      return;
+    }
+
+    Animated.timing(tabContentOpacity, {
+      toValue: 0,
+      duration: 100,
+      useNativeDriver: true,
+    }).start(() => {
+      setActiveTab(nextTab);
+      Animated.timing(tabContentOpacity, {
+        toValue: 1,
+        duration: 100,
+        useNativeDriver: true,
+      }).start();
+    });
+  };
+
+  const fetchExchangeRates = async (force = false) => {
+    const cacheKey = 'CAD';
+    const cached = exchangeRateCache.get(cacheKey);
+
+    if (!force && cached && Date.now() - cached.fetchedAt < 30 * 60 * 1000) {
+      setRates(cached.rates);
+      setRatesFetchedAt(cached.fetchedAt);
+      setRatesError(null);
+      return;
+    }
+
+    setRatesLoading(true);
+    setRatesError(null);
+
+    try {
+      const response = await fetch('https://open.er-api.com/v6/latest/CAD');
+      const payload = (await response.json()) as ExchangeRatesPayload;
+
+      if (!response.ok || payload.result === 'error' || !payload.rates) {
+        throw new Error('Exchange rate fetch failed');
+      }
+
+      exchangeRateCache.set(cacheKey, {
+        fetchedAt: Date.now(),
+        rates: payload.rates,
+      });
+
+      setRates(payload.rates);
+      setRatesFetchedAt(Date.now());
+      setRatesError(null);
+    } catch {
+      setRatesError('Could not fetch exchange rates');
+    } finally {
+      setRatesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'currency') {
+      void fetchExchangeRates(false);
+    }
+  }, [activeTab]);
 
   if (!trip) {
     return (
-      <View style={styles.screen}>
+      <View style={styles.screenRoot}>
+        <LinearGradient
+          colors={design.backgroundGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
         <StatusBar style="dark" />
-        <SafeAreaView style={styles.fullCenter}>
-          <Text style={styles.emptyTitle}>Trip not found</Text>
-          <Pressable onPress={() => navigation.goBack()} style={styles.backGhostButton}>
-            <Text style={styles.backGhostText}>Back</Text>
+        <SafeAreaView style={styles.fallbackCenter}>
+          <Text style={styles.fallbackTitle}>{isLoading ? 'Loading trip...' : 'Trip not found'}</Text>
+          <Pressable onPress={() => navigation.goBack()} style={({ pressed }) => [styles.fallbackBackPress, pressed ? styles.pressScale : null]}>
+            <FrostedSurface style={styles.fallbackBackButton}>
+              <Text style={styles.fallbackBackText}>Back</Text>
+            </FrostedSurface>
           </Pressable>
         </SafeAreaView>
       </View>
@@ -1237,715 +2096,678 @@ export function TripDetailScreen({ navigation, route }: Props) {
   }
 
   return (
-    <View style={styles.screen}>
-      <StatusBar style="dark" />
-
-      <TripMap
-        pins={filteredMapData.pins}
-        routeSegments={filteredMapData.routeSegments}
-        selectedPinId={selectedPin?.id ?? null}
-        focusedPin={selectedPin}
-        focusedActivity={focusedActivity}
-        onPinPress={(pin) => {
-          setSelectedPinId(pin.id);
-          setSelectedActivityId(getDefaultActivityForPin(pin)?.id ?? null);
-          animateSheetTo(sheetSnapOpen);
-        }}
-        onMapPress={() => {
-          setSelectedPinId(null);
-          setSelectedActivityId(null);
-          animateSheetTo(sheetSnapClosed);
-        }}
+    <View style={styles.screenRoot}>
+      <LinearGradient
+        colors={design.backgroundGradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={StyleSheet.absoluteFill}
       />
 
-      <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
-        <View style={styles.topCard}>
-          <View style={styles.headerRow}>
-            <Pressable onPress={() => navigation.goBack()} style={styles.backButton}>
-              <Text style={styles.backText}>‹</Text>
-            </Pressable>
+      <StatusBar style="dark" />
 
-            <Text style={styles.tripTitle} numberOfLines={1}>
-              {trip.title}
-            </Text>
+      <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'top', 'bottom']}>
+        {showingFullScreenTab ? (
+          <Animated.View style={[styles.fullScreenTabShell, { opacity: tabContentOpacity }]}>
+            <View style={styles.fullScreenTabTopBar}>
+              <Pressable
+                onPress={() => animateTabSwitch('overview')}
+                style={({ pressed }) => [styles.fullScreenBackPress, pressed ? styles.pressScale : null]}
+              >
+                <FrostedSurface style={styles.fullScreenBackButton}>
+                  <ChevronLeftIcon />
+                </FrostedSurface>
+              </Pressable>
+              <Text style={styles.fullScreenTabTitle}>{activeTabLabel}</Text>
+            </View>
 
-            <Pressable
-              onPress={() => navigation.navigate('Itinerary', { tripId: trip.id })}
-              style={styles.itineraryButton}
-            >
-              <Text style={styles.itineraryButtonText}>≡</Text>
-            </Pressable>
-          </View>
+            <View style={styles.fullScreenTabBody}>
+              {activeTab === 'map' ? <MapTabContent trip={trip} navigation={navigation} fullScreen={true} /> : null}
 
-          <ScrollView
-            horizontal={true}
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterRow}
-          >
-            {FILTER_OPTIONS.map((option) => {
-              const isActive = activeFilter === option.key;
-              const tint = getFilterTint(option.key, isActive);
-              return (
-                <Pressable
-                  key={option.key}
-                  style={[
-                    styles.filterChip,
-                    {
-                      backgroundColor: tint.bg,
-                      borderColor: tint.border,
-                    },
-                  ]}
-                  onPress={() => setActiveFilter(option.key)}
-                >
-                  <Text style={[styles.filterChipText, { color: tint.text }]}>
-                    {option.label}
-                  </Text>
+              {activeTab === 'itinerary' ? (
+                <View style={styles.embeddedScreenFill}>
+                  <ItineraryScreen
+                    key={`embedded-itinerary-${trip.id}-${itineraryInitialType}`}
+                    navigation={navigation as never}
+                    route={{
+                      key: `embedded-itinerary-${trip.id}`,
+                      name: 'Itinerary',
+                      params: { tripId: trip.id },
+                    } as never}
+                    embedded={true}
+                    initialTypeFilter={itineraryInitialType}
+                  />
+                </View>
+              ) : null}
+
+              {activeTab === 'currency' ? (
+                <CurrencyTabContent
+                  destinationCurrencies={destinationCurrencies.length > 0 ? destinationCurrencies : ['USD']}
+                  baseAmountInput={baseAmountInput}
+                  onBaseAmountChange={setBaseAmountInput}
+                  ratesLoading={ratesLoading}
+                  ratesError={ratesError}
+                  rates={rates}
+                  ratesFetchedAt={ratesFetchedAt}
+                  onRetry={() => {
+                    void fetchExchangeRates(true);
+                  }}
+                />
+              ) : null}
+
+              {activeTab === 'docs' ? <DocsTabContent docs={docs} /> : null}
+            </View>
+          </Animated.View>
+        ) : (
+          <>
+            <View style={styles.navContainer}>
+              <View style={styles.navRow}>
+                <Pressable onPress={() => navigation.goBack()} style={({ pressed }) => [styles.backButtonPress, pressed ? styles.pressScale : null]}>
+                  <FrostedSurface style={styles.backButton}>
+                    <ChevronLeftIcon />
+                  </FrostedSurface>
                 </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
-      </SafeAreaView>
 
-      <View style={styles.bottomOverlay} pointerEvents="box-none">
-        <Animated.View
-          style={[
-            styles.bottomSheet,
-            {
-              transform: [{ translateY: sheetTranslate }],
-            },
-          ]}
-        >
-          <View {...panResponder.panHandlers}>
-            <View style={styles.bottomSheetHandleWrap}>
-              <View style={styles.bottomSheetHandle} />
+                <Text style={styles.tripTitleInline} numberOfLines={1}>
+                  {trip.title}
+                </Text>
+              </View>
+
+              <Text style={styles.tripSubtitleInline} numberOfLines={1}>
+                {tripSubtitle}
+              </Text>
             </View>
-          </View>
 
-          {focusedActivity ? (
-            <View style={styles.sheetContent}>
-              {(() => {
-                const swipeGroup = getSwipeGroup(focusedActivity);
-                const swipeActivities = getSwipeActivities(filteredMapData.pins, swipeGroup);
-                const pages = swipeActivities.length > 0 ? swipeActivities : [focusedActivity];
-
+            <ScrollView horizontal={true} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
+              {detailTabs.map((tab) => {
+                const isActive = activeTab === tab.key;
                 return (
-                  <View
-                    style={styles.flightPagerWrap}
-                    onLayout={(event) => {
-                      const measuredWidth = Math.round(event.nativeEvent.layout.width);
-                      if (measuredWidth > 0 && measuredWidth !== flightPagerWidth) {
-                        setFlightPagerWidth(measuredWidth);
-                      }
-                    }}
+                  <Pressable
+                    key={`detail-tab-${tab.key}`}
+                    onPress={() => animateTabSwitch(tab.key)}
+                    style={({ pressed }) => [styles.tabChipPress, pressed ? styles.pressScale : null]}
                   >
-                    <ScrollView
-                      ref={flightPagerRef}
-                      horizontal={true}
-                      pagingEnabled={true}
-                      showsHorizontalScrollIndicator={false}
-                      onMomentumScrollEnd={(event) => {
-                        if (flightPagerWidth <= 0 || pages.length <= 1) {
-                          return;
-                        }
-
-                        const nextIndex = Math.round(event.nativeEvent.contentOffset.x / flightPagerWidth);
-                        const clamped = Math.max(0, Math.min(nextIndex, pages.length - 1));
-                        if (clamped !== flightLegIndex) {
-                          setFlightLegIndex(clamped);
-                        }
-
-                        const nextActivity = pages[clamped];
-                        if (nextActivity) {
-                          setSelectedActivityId(nextActivity.id);
-                          const pinForActivity = filteredMapData.pins.find((pin) =>
-                            pin.activities.some((activity) => activity.id === nextActivity.id)
-                          );
-                          if (pinForActivity && pinForActivity.id !== selectedPinId) {
-                            setSelectedPinId(pinForActivity.id);
-                          }
-                        }
-                      }}
+                    <FrostedSurface
+                      style={[styles.tabChip, isActive ? styles.tabChipActive : styles.tabChipInactive]}
+                      tint={isActive ? 'rgba(15,45,30,0.85)' : 'rgba(255,255,255,0.35)'}
                     >
-                      {pages.map((pageActivity, pageIndex) => {
-                        const experienceType = getExperienceType(pageActivity);
-                        const isFlight = pageActivity.bookingType === 'flight';
-                        const isHotel = pageActivity.bookingType === 'hotel';
-                        const isSplitFlightBooking =
-                          isFlight &&
-                          pages.length > 1 &&
-                          pages.every(
-                            (candidate) =>
-                              candidate.bookingType === 'flight' && candidate.bookingId === pageActivity.bookingId
-                          );
-                        const headerTagLabel = isFlight
-                          ? isSplitFlightBooking
-                            ? `Flight ${pageIndex + 1}/${pages.length}`
-                            : 'Flight'
-                          : isHotel
-                            ? 'Hotel'
-                            : getExperienceLabel(experienceType);
-                        const headerTagStyle = isFlight
-                          ? styles.headerTypeTagFlight
-                          : isHotel
-                            ? styles.headerTypeTagHotel
-                            : experienceType === 'activities'
-                              ? styles.headerTypeTagActivities
-                              : experienceType === 'food'
-                                ? styles.headerTypeTagFood
-                                : styles.headerTypeTagSightseeing;
-                        const headerTagTextStyle = isFlight
-                          ? styles.headerTypeTagTextFlight
-                          : isHotel
-                            ? styles.headerTypeTagTextHotel
-                            : experienceType === 'activities'
-                              ? styles.headerTypeTagTextActivities
-                              : experienceType === 'food'
-                                ? styles.headerTypeTagTextFood
-                                : styles.headerTypeTagTextSightseeing;
-                        const hotelBooking = isHotel
-                          ? trip.bookings.find((booking) => booking.id === pageActivity.bookingId && booking.type === 'hotel')
-                          : undefined;
-                        const checkOutDate = hotelBooking?.hotelStay?.checkOutDate ?? pageActivity.dateLabel ?? 'TBD';
-                        const checkOutTime = hotelBooking?.hotelStay?.checkOutTime ?? pageActivity.timeLabel;
-                        const flightData = isFlight ? buildFlightLegSheetData(trip, pageActivity) : null;
-                        const flightLegs = flightData?.legs ?? [];
-                        const firstFlightLeg = flightLegs[0] ?? null;
-                        const lastFlightLeg = flightLegs[flightLegs.length - 1] ?? firstFlightLeg;
-                        const flightChainLabel = buildFlightChainLabel(flightLegs);
-
-                        return (
-                          <View
-                            key={pageActivity.id}
-                            style={[
-                              styles.flightLegPage,
-                              flightPagerWidth > 0 ? { width: flightPagerWidth } : null,
-                            ]}
-                          >
-                            <View style={styles.sheetHeader}>
-                              <View
-                                style={[
-                                  styles.headerIconBadge,
-                                  isFlight
-                                    ? styles.headerIconBadgeFlight
-                                    : isHotel
-                                      ? styles.headerIconBadgeHotel
-                                      : experienceType === 'activities'
-                                        ? styles.headerIconBadgeActivities
-                                        : experienceType === 'food'
-                                          ? styles.headerIconBadgeFood
-                                          : styles.headerIconBadgeSightseeing,
-                                ]}
-                              >
-                                {isFlight ? (
-                                  <SheetFlightBadgeIcon />
-                                ) : isHotel ? (
-                                  <SheetHotelBadgeIcon />
-                                ) : experienceType === 'activities' ? (
-                                  <SheetActivitiesBadgeIcon />
-                                ) : experienceType === 'food' ? (
-                                  <SheetFoodBadgeIcon />
-                                ) : (
-                                  <SheetSightseeingBadgeIcon />
-                                )}
-                              </View>
-
-                              <View style={styles.headerTextBlock}>
-                                <Text style={styles.headerTitle} numberOfLines={1}>
-                                  {pageActivity.name}
-                                </Text>
-                                <Text style={styles.headerSubtitle} numberOfLines={1}>
-                                  {isFlight
-                                    ? `${flightChainLabel} · ${(firstFlightLeg?.depDate ?? pageActivity.dateLabel) || 'TBD'}`
-                                    : isHotel
-                                      ? [pageActivity.city, pageActivity.country].filter(Boolean).join(' · ') || 'Stay details'
-                                      : [pageActivity.city, pageActivity.country].filter(Boolean).join(' · ') || 'Experience details'}
-                                </Text>
-                              </View>
-
-                              <View style={[styles.headerTypeTag, headerTagStyle]}>
-                                <Text style={[styles.headerTypeTagText, headerTagTextStyle]}>
-                                  {headerTagLabel}
-                                </Text>
-                              </View>
-                            </View>
-
-                            {isFlight ? (
-                              <View style={styles.sheetBody}>
-                                <View style={styles.flightRouteRow}>
-                                  <Text style={styles.flightCodeText} numberOfLines={1}>
-                                    {firstFlightLeg?.fromCode ?? pageActivity.fromCode ?? '—'}
-                                  </Text>
-                                  <View style={styles.flightMidWrap}>
-                                    <View style={styles.flightDivider} />
-                                    <SheetPlaneRowIcon />
-                                    <View style={styles.flightDivider} />
-                                  </View>
-                                  <Text style={styles.flightCodeText} numberOfLines={1}>
-                                    {lastFlightLeg?.toCode ?? pageActivity.toCode ?? pageActivity.iataCode ?? '—'}
-                                  </Text>
-                                </View>
-                                {flightLegs.length > 1 ? (
-                                  <Text style={styles.flightChainSubLabel} numberOfLines={1}>
-                                    {flightChainLabel}
-                                  </Text>
-                                ) : null}
-
-                                <View style={styles.infoGrid}>
-                                  <View style={styles.infoTile}>
-                                    <Text style={styles.tileLabel}>Departs</Text>
-                                    <Text style={styles.tileValue}>{firstFlightLeg?.depTime ?? parseFlightSegments(pageActivity).depTime}</Text>
-                                    <Text style={styles.tileSubLabel}>{firstFlightLeg?.depDate ?? parseFlightSegments(pageActivity).depDate}</Text>
-                                  </View>
-                                  <View style={styles.infoTile}>
-                                    <Text style={styles.tileLabel}>Arrives</Text>
-                                    <Text style={styles.tileValue}>{lastFlightLeg?.arrTime ?? parseFlightSegments(pageActivity).arrTime}</Text>
-                                    <Text style={styles.tileSubLabel}>{lastFlightLeg?.arrDate ?? parseFlightSegments(pageActivity).arrDate}</Text>
-                                  </View>
-                                  <View style={styles.infoTile}>
-                                    <Text style={styles.tileLabel}>Duration</Text>
-                                    <Text style={styles.tileValue}>{flightLegs.length > 1 ? `${flightLegs.length} legs` : firstFlightLeg?.duration ?? 'TBD'}</Text>
-                                    <Text style={styles.tileSubLabel}>{flightLegs.length > 1 ? 'Connected' : 'Direct'}</Text>
-                                  </View>
-                                </View>
-                              </View>
-                            ) : isHotel ? (
-                              <View style={styles.sheetBody}>
-                                <View style={styles.infoGridTwo}>
-                                  <View style={styles.infoTile}>
-                                    <Text style={styles.tileLabel}>Check-in</Text>
-                                    <Text style={styles.tileValue}>{toDateAndTimeParts(pageActivity).dateValue}</Text>
-                                    <Text style={styles.tileSubLabel}>
-                                      {toDateAndTimeParts(pageActivity).timeValue
-                                        ? `from ${toDateAndTimeParts(pageActivity).timeValue}`
-                                        : 'from TBD'}
-                                    </Text>
-                                  </View>
-                                  <View style={styles.infoTile}>
-                                    <Text style={styles.tileLabel}>Check-out</Text>
-                                    <Text style={styles.tileValue}>{checkOutDate}</Text>
-                                    <Text style={styles.tileSubLabel}>
-                                      {checkOutTime
-                                        ? `from ${checkOutTime}`
-                                        : 'from TBD'}
-                                    </Text>
-                                  </View>
-                                </View>
-                              </View>
-                            ) : (
-                              <View style={styles.sheetBody}>
-                                <View style={styles.infoGridTwo}>
-                                  <View style={styles.infoTile}>
-                                    <Text style={styles.tileLabel}>Type</Text>
-                                    <Text style={styles.tileValue}>{getExperienceLabel(experienceType)}</Text>
-                                    <Text style={styles.tileSubLabel}>
-                                      {[pageActivity.city, pageActivity.country].filter(Boolean).join(', ') || 'Location TBD'}
-                                    </Text>
-                                  </View>
-                                  <View style={styles.infoTile}>
-                                    <Text style={styles.tileLabel}>Price</Text>
-                                    <Text style={styles.tileValue}>{withCurrencyLabel(pageActivity.priceLabel) ?? 'Currency TBD'}</Text>
-                                    <Text style={styles.tileSubLabel}>per person</Text>
-                                  </View>
-                                </View>
-                              </View>
-                            )}
-
-                            <View style={styles.buttonRow}>
-                              <Pressable style={styles.moreInfoButton} onPress={() => openActivityDetails(pageActivity)}>
-                                <Text style={styles.moreInfoButtonText}>More info</Text>
-                              </Pressable>
-                              <Pressable
-                                style={[
-                                  styles.openMapsButton,
-                                  isFlight
-                                    ? styles.openMapsButtonFlight
-                                    : isHotel
-                                      ? styles.openMapsButtonHotel
-                                      : experienceType === 'activities'
-                                        ? styles.openMapsButtonActivities
-                                        : experienceType === 'food'
-                                          ? styles.openMapsButtonFood
-                                          : styles.openMapsButtonSightseeing,
-                                ]}
-                                onPress={() => openInMaps(pageActivity)}
-                              >
-                                <Text style={styles.openMapsButtonText}>Open in Maps</Text>
-                              </Pressable>
-                            </View>
-                          </View>
-                        );
-                      })}
-                    </ScrollView>
-                  </View>
+                      <Text style={[styles.tabChipText, isActive ? styles.tabChipTextActive : styles.tabChipTextInactive]}>
+                        {tab.label}
+                      </Text>
+                    </FrostedSurface>
+                  </Pressable>
                 );
-              })()}
-            </View>
-          ) : (
-            <View style={styles.bottomSheetEmptyWrap}>
-              <Text style={styles.bottomSheetEmptyText}>Tap a pin to see details.</Text>
-            </View>
-          )}
-        </Animated.View>
-      </View>
+              })}
+            </ScrollView>
+
+            <Animated.View style={[styles.tabContentWrap, { opacity: tabContentOpacity }]}>
+              {activeTab === 'overview' ? (
+                <OverviewTabContent
+                  trip={trip}
+                  mapData={mapData}
+                  destinationCurrencies={destinationCurrencies.slice(0, 3)}
+                  destinationCountries={destinationCountries}
+                  docsCount={docsCount}
+                  onOpenMap={() => animateTabSwitch('map')}
+                  onOpenCurrency={() => animateTabSwitch('currency')}
+                  onOpenDocs={() => animateTabSwitch('docs')}
+                  onOpenItineraryFlights={() => {
+                    setItineraryInitialType('flights');
+                    animateTabSwitch('itinerary');
+                  }}
+                  onOpenItineraryHotels={() => {
+                    setItineraryInitialType('hotels');
+                    animateTabSwitch('itinerary');
+                  }}
+                />
+              ) : null}
+            </Animated.View>
+          </>
+        )}
+      </SafeAreaView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  screen: {
+  screenRoot: {
     flex: 1,
-    backgroundColor: '#e8f0e9',
+    backgroundColor: '#c8e6d4',
   },
-  fullCenter: {
+  safeArea: {
     flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
   },
-  emptyTitle: {
-    color: '#1e3d2f',
-    fontSize: 22,
-    fontWeight: '700',
-    marginBottom: 16,
+  fullScreenTabShell: {
+    flex: 1,
   },
-  backGhostButton: {
-    backgroundColor: '#1e3d2f',
-    borderRadius: 999,
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  backGhostText: {
-    color: '#ecf4ed',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  topOverlay: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
+  fullScreenTabTopBar: {
+    paddingTop: 8,
     paddingHorizontal: 12,
-    paddingTop: 6,
-  },
-  topCard: {
-    backgroundColor: colors.topCard,
-    borderRadius: 22,
-    borderWidth: 1,
-    borderColor: 'rgba(30,61,47,0.18)',
-    paddingHorizontal: 12,
-    paddingTop: 9,
-    paddingBottom: 8,
-  },
-  headerRow: {
+    paddingBottom: 6,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  backButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#dce8df',
-  },
-  itineraryButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#dce8df',
-    borderWidth: 1,
-    borderColor: 'rgba(30,61,47,0.2)',
-  },
-  itineraryButtonText: {
-    color: colors.accent,
-    fontSize: 20,
-    fontWeight: '500',
-    lineHeight: 20,
-    marginTop: -1,
-  },
-  backText: {
-    color: colors.accent,
-    fontSize: 28,
-    lineHeight: 30,
-    marginTop: -1,
-  },
-  tripTitle: {
-    color: colors.accent,
-    fontSize: 18,
-    fontWeight: '800',
-    flexShrink: 1,
-    textAlign: 'center',
-    marginHorizontal: 10,
-  },
-  filterRow: {
-    paddingTop: 8,
-    paddingBottom: 2,
     gap: 8,
   },
-  filterChip: {
-    borderRadius: 999,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-    borderWidth: 1,
+  fullScreenBackPress: {
+    borderRadius: 14,
   },
-  filterChipText: {
+  fullScreenBackButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 0.5,
+    borderColor: design.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  fullScreenTabTitle: {
     fontSize: 12,
+    fontWeight: '600',
+    color: design.mutedText,
+    letterSpacing: 0.3,
+  },
+  fullScreenTabBody: {
+    flex: 1,
+  },
+  navContainer: {
+    paddingTop: 8,
+    paddingHorizontal: 20,
+  },
+  navRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backButtonPress: {
+    borderRadius: 16,
+  },
+  backButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    borderWidth: 0.5,
+    borderColor: design.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  tripTitleInline: {
+    marginLeft: 10,
+    fontSize: 22,
+    fontWeight: '700',
+    letterSpacing: -0.3,
+    color: design.screenTitle,
+    flexShrink: 1,
+  },
+  tripSubtitleInline: {
+    marginTop: 6,
+    marginBottom: 16,
+    marginLeft: 42,
+    fontSize: 13,
+    fontWeight: '400',
+    color: design.mutedText,
+  },
+  tabRow: {
+    paddingHorizontal: 20,
+    gap: 6,
+  },
+  tabChipPress: {
+    borderRadius: 20,
+  },
+  tabChip: {
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    minHeight: 32,
+    justifyContent: 'center',
+  },
+  tabChipActive: {
+    borderWidth: 0,
+  },
+  tabChipInactive: {
+    borderWidth: 0.5,
+    borderColor: design.borderSoft,
+  },
+  tabChipText: {
+    fontSize: 13,
     fontWeight: '500',
   },
-  bottomOverlay: {
-    position: 'absolute',
-    left: 8,
-    right: 8,
-    bottom: 4,
+  tabChipTextActive: {
+    color: '#e8f5ee',
   },
-  bottomSheet: {
-    backgroundColor: '#ffffff',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    borderBottomLeftRadius: 14,
-    borderBottomRightRadius: 14,
-    borderWidth: 0.5,
-    borderColor: 'rgba(12,24,44,0.12)',
-    overflow: 'hidden',
-    paddingBottom: 12,
+  tabChipTextInactive: {
+    color: design.mutedText,
   },
-  bottomSheetHandleWrap: {
-    alignItems: 'center',
-    paddingTop: 10,
-    paddingBottom: 10,
+  tabContentWrap: {
+    flex: 1,
+    marginTop: 6,
   },
-  bottomSheetHandle: {
-    width: 36,
-    height: 4,
-    borderRadius: 999,
-    backgroundColor: '#D0D5DD',
+  tabScroll: {
+    flex: 1,
   },
-  sheetContent: {
-    paddingHorizontal: 12,
-  },
-  sheetHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
+  overviewScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
     gap: 10,
-    paddingBottom: 12,
-    borderBottomWidth: 0.5,
-    borderBottomColor: 'rgba(12,24,44,0.14)',
   },
-  headerIconBadge: {
+  tilePressWrap: {
+    borderRadius: 18,
+  },
+  overviewTile: {
+    borderRadius: 18,
+    borderWidth: 0.5,
+    borderColor: design.border,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  tileMainRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  tileBadge: {
     width: 44,
     height: 44,
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  headerIconBadgeFlight: {
-    backgroundColor: '#EEEDFE',
-  },
-  headerIconBadgeHotel: {
-    backgroundColor: '#E6F1FB',
-  },
-  headerIconBadgeSightseeing: {
-    backgroundColor: '#FDECEC',
-  },
-  headerIconBadgeActivities: {
-    backgroundColor: '#FFF4E8',
-  },
-  headerIconBadgeFood: {
-    backgroundColor: '#ECF9F0',
-  },
-  headerTextBlock: {
+  tileBody: {
     flex: 1,
     minWidth: 0,
-    paddingTop: 2,
   },
-  headerTitle: {
-    color: '#111827',
+  tileTitle: {
     fontSize: 15,
-    fontWeight: '500',
+    fontWeight: '600',
+    color: design.screenTitle,
   },
-  headerSubtitle: {
-    color: '#6B7280',
+  tileSubtitle: {
+    marginTop: 2,
     fontSize: 12,
     fontWeight: '400',
-    marginTop: 2,
+    color: design.mutedText,
   },
-  headerTypeTag: {
-    borderRadius: 7,
-    paddingVertical: 4,
-    paddingHorizontal: 9,
-    marginTop: 2,
+  tileArrowButton: {
+    borderRadius: 14,
   },
-  headerTypeTagFlight: {
-    backgroundColor: '#EEEDFE',
+  tileArrowInner: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.8)',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  headerTypeTagHotel: {
-    backgroundColor: '#E6F1FB',
-  },
-  headerTypeTagSightseeing: {
-    backgroundColor: '#FDECEC',
-  },
-  headerTypeTagActivities: {
-    backgroundColor: '#FFF4E8',
-  },
-  headerTypeTagFood: {
-    backgroundColor: '#ECF9F0',
-  },
-  headerTypeTagText: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
-  headerTypeTagTextFlight: {
-    color: '#3C3489',
-  },
-  headerTypeTagTextHotel: {
-    color: '#0C447C',
-  },
-  headerTypeTagTextSightseeing: {
-    color: '#B42318',
-  },
-  headerTypeTagTextActivities: {
-    color: '#B54708',
-  },
-  headerTypeTagTextFood: {
-    color: '#166534',
-  },
-  sheetBody: {
-    paddingTop: 12,
-  },
-  flightRouteRow: {
+  currencyTileHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 10,
-    gap: 8,
   },
-  flightChainSubLabel: {
-    color: '#6B7280',
+  currencyTileLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: design.mutedText,
+  },
+  currencyTileMeta: {
     fontSize: 11,
     fontWeight: '400',
-    marginTop: -2,
-    marginBottom: 10,
-    textAlign: 'center',
+    color: design.mutedText,
   },
-  flightPagerWrap: {
-    marginHorizontal: -2,
-  },
-  flightLegPage: {
-    paddingHorizontal: 2,
-  },
-  flightCodeText: {
-    color: '#111827',
-    fontSize: 22,
-    fontWeight: '500',
-    minWidth: 52,
-    textAlign: 'center',
-  },
-  flightMidWrap: {
+  currencyPreviewRow: {
+    marginTop: 10,
     flexDirection: 'row',
     alignItems: 'center',
-    flex: 1,
-    gap: 6,
-  },
-  flightDivider: {
-    flex: 1,
-    minWidth: 0,
-    height: 0.5,
-    backgroundColor: 'rgba(17,24,39,0.2)',
-  },
-  infoGrid: {
-    flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
   },
-  infoGridTwo: {
+  currencyPreviewPair: {
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
   },
-  infoTile: {
-    flex: 1,
-    minWidth: 0,
-    backgroundColor: '#F7F8FA',
-    borderRadius: 11,
-    padding: 10,
+  currencyPreviewBox: {
+    borderRadius: 10,
+    borderWidth: 0.5,
+    borderColor: 'rgba(255,255,255,0.8)',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    minWidth: 82,
   },
-  tileLabel: {
-    color: '#6B7280',
+  currencyCode: {
     fontSize: 11,
-    fontWeight: '400',
-  },
-  tileValue: {
-    color: '#111827',
-    fontSize: 15,
     fontWeight: '500',
-    marginTop: 4,
+    color: design.mutedText,
   },
-  tileSubLabel: {
-    color: '#6B7280',
-    fontSize: 11,
-    fontWeight: '400',
+  currencyAmount: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: design.screenTitle,
     marginTop: 2,
   },
-  buttonRow: {
+  currencyArrow: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: design.mutedText,
+  },
+  mapTabRoot: {
+    flex: 1,
+    paddingHorizontal: 20,
+    paddingBottom: 12,
+  },
+  mapTabRootFullScreen: {
+    paddingHorizontal: 0,
+    paddingBottom: 0,
+  },
+  mapFilterRow: {
+    gap: 8,
+    paddingBottom: 10,
+  },
+  mapFilterRowFullScreen: {
+    paddingHorizontal: 12,
+    paddingTop: 2,
+    paddingBottom: 8,
+  },
+  mapFilterPress: {
+    borderRadius: 20,
+  },
+  mapFilterChip: {
+    borderRadius: 20,
+    borderWidth: 0.5,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  mapFilterText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  mapPaneWrap: {
+    flex: 1,
+    borderRadius: 22,
+    borderWidth: 0.5,
+    borderColor: design.border,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(255,255,255,0.28)',
+  },
+  mapPaneWrapFullScreen: {
+    borderRadius: 0,
+    borderWidth: 0,
+    backgroundColor: 'transparent',
+  },
+  mapDetailOverlay: {
+    position: 'absolute',
+    left: 12,
+    right: 12,
+    bottom: 12,
+  },
+  mapDetailCard: {
+    borderRadius: 16,
+    borderWidth: 0.5,
+    borderColor: design.border,
+    padding: 12,
+  },
+  mapDetailHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  mapDetailTextWrap: {
+    flex: 1,
+    minWidth: 0,
+  },
+  mapDetailTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: design.screenTitle,
+  },
+  mapDetailSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '400',
+    color: design.mutedText,
+  },
+  mapCategoryTag: {
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  mapCategoryTagText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  mapActivitySwitchRow: {
+    marginTop: 10,
+    gap: 6,
+  },
+  mapActivityChipPress: {
+    borderRadius: 14,
+  },
+  mapActivityChip: {
+    borderRadius: 14,
+    borderWidth: 0.5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    maxWidth: 180,
+  },
+  mapActivityChipActive: {
+    borderColor: 'rgba(15,45,30,0.85)',
+  },
+  mapActivityChipInactive: {
+    borderColor: 'rgba(255,255,255,0.8)',
+  },
+  mapActivityChipText: {
+    fontSize: 11,
+    fontWeight: '500',
+    color: design.bodyText,
+  },
+  mapActivityChipTextActive: {
+    color: '#e8f5ee',
+  },
+  mapActionRow: {
+    marginTop: 10,
     flexDirection: 'row',
     gap: 8,
-    marginTop: 12,
   },
-  moreInfoButton: {
+  mapActionPress: {
     flex: 1,
-    minWidth: 0,
-    borderRadius: 11,
+    borderRadius: 12,
+  },
+  mapActionSecondary: {
+    borderRadius: 12,
     borderWidth: 0.5,
-    borderColor: 'rgba(17,24,39,0.25)',
-    backgroundColor: '#F7F8FA',
-    paddingVertical: 11,
+    borderColor: 'rgba(255,255,255,0.85)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  mapActionSecondaryText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: design.mutedText,
+  },
+  mapActionPrimary: {
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+  },
+  mapActionPrimaryText: {
+    fontSize: 13,
+    fontWeight: '500',
+    color: '#e8f5ee',
+  },
+  embeddedScreenFill: {
+    flex: 1,
+  },
+  currencyScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    gap: 10,
+  },
+  currencyInputTile: {
+    borderRadius: 18,
+    borderWidth: 0.5,
+    borderColor: design.border,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+  },
+  currencyInputLabel: {
+    fontSize: 12,
+    fontWeight: '500',
+    color: design.mutedText,
+  },
+  currencyInput: {
+    marginTop: 6,
+    fontSize: 28,
+    fontWeight: '700',
+    color: design.screenTitle,
+    paddingVertical: 0,
+  },
+  currencyUpdatedLabel: {
+    marginTop: 6,
+    fontSize: 11,
+    fontWeight: '400',
+    color: design.mutedText,
+  },
+  currencyErrorTile: {
+    borderRadius: 14,
+    borderWidth: 0.5,
+    borderColor: 'rgba(186,55,44,0.3)',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  currencyErrorText: {
+    color: '#8b2c22',
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  currencyResultTile: {
+    borderRadius: 16,
+    borderWidth: 0.5,
+    borderColor: design.border,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  currencyResultTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  currencyResultCode: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: design.mutedText,
+    letterSpacing: 0.4,
+  },
+  currencyResultName: {
+    fontSize: 11,
+    fontWeight: '400',
+    color: design.mutedText,
+  },
+  currencyResultAmount: {
+    marginTop: 5,
+    fontSize: 24,
+    fontWeight: '700',
+    color: design.screenTitle,
+    letterSpacing: -0.2,
+  },
+  docsScrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 24,
+    gap: 10,
+  },
+  docsHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  docsHeaderTitle: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: design.screenTitle,
+  },
+  docsAddPress: {
+    borderRadius: 14,
+  },
+  docsAddButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 14,
+    borderWidth: 0.5,
+    borderColor: design.border,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  moreInfoButtonText: {
-    color: '#344054',
-    fontSize: 13,
+  docsAddText: {
+    fontSize: 22,
+    lineHeight: 22,
+    marginTop: -2,
+    color: design.screenTitle,
     fontWeight: '500',
   },
-  openMapsButton: {
+  docTile: {
+    borderRadius: 16,
+    borderWidth: 0.5,
+    borderColor: design.border,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  docIconWrap: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: 'rgba(186,117,23,0.12)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  docIcon: {
+    fontSize: 16,
+  },
+  docTextWrap: {
     flex: 1,
     minWidth: 0,
-    borderRadius: 11,
-    paddingVertical: 11,
+  },
+  docTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: design.screenTitle,
+  },
+  docSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    fontWeight: '400',
+    color: design.mutedText,
+  },
+  fallbackCenter: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    paddingHorizontal: 20,
   },
-  openMapsButtonFlight: {
-    backgroundColor: '#534AB7',
+  fallbackTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: design.screenTitle,
+    marginBottom: 12,
   },
-  openMapsButtonHotel: {
-    backgroundColor: '#185FA5',
+  fallbackBackPress: {
+    borderRadius: 999,
   },
-  openMapsButtonSightseeing: {
-    backgroundColor: '#EA4335',
+  fallbackBackButton: {
+    borderRadius: 999,
+    borderWidth: 0.5,
+    borderColor: design.border,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
   },
-  openMapsButtonActivities: {
-    backgroundColor: '#FB8C00',
-  },
-  openMapsButtonFood: {
-    backgroundColor: '#34A853',
-  },
-  openMapsButtonText: {
-    color: '#ffffff',
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  bottomSheetEmptyWrap: {
-    minHeight: 124,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  bottomSheetEmptyText: {
-    color: '#4d6d5d',
+  fallbackBackText: {
     fontSize: 13,
     fontWeight: '600',
+    color: design.screenTitle,
+  },
+  pressScale: {
+    transform: [{ scale: 0.97 }],
   },
 });

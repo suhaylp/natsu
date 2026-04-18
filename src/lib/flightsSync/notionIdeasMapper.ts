@@ -91,6 +91,7 @@ const propertyAliases: Record<string, string[]> = {
   address: ['location', 'street_address'],
   latitude: ['lat', 'lattitude', 'location_latitude', 'coords_latitude', 'map_latitude', 'geo_latitude'],
   longitude: ['lng', 'lon', 'long', 'location_longitude', 'coords_longitude', 'map_longitude', 'geo_longitude'],
+  coordinates: ['coordinate', 'coords', 'lat_lng', 'latlng', 'map_coordinates', 'geo_coordinates'],
   description: ['details', 'notes'],
   price: ['cost', 'budget'],
   photos: ['images', 'photo'],
@@ -287,6 +288,21 @@ function normalizeCoordinatePair(
   }
 
   return { latitude: lat, longitude: lon };
+}
+
+function parseCoordinateText(value: string | undefined): { latitude: number; longitude: number } | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const match = value.match(/(-?\d{1,2}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/);
+  if (!match?.[1] || !match[2]) {
+    return undefined;
+  }
+
+  const latitude = Number(match[1]);
+  const longitude = Number(match[2]);
+  return normalizeCoordinatePair(latitude, longitude);
 }
 
 function getOptionalCheckbox(properties: Record<string, NotionProperty>, key: string): boolean | undefined {
@@ -527,10 +543,10 @@ function parseFlatIdeaRow(page: NotionPage): FlatIdeaRow {
   const city = normalizeLocationText(getOptionalText(properties, 'city'));
   const country = normalizeLocationText(getOptionalText(properties, 'country'));
   const address = normalizeLocationText(getOptionalText(properties, 'address'));
-  const coordinatePair = normalizeCoordinatePair(
-    getOptionalNumber(properties, 'latitude'),
-    getOptionalNumber(properties, 'longitude')
-  );
+  const coordinatePair =
+    normalizeCoordinatePair(getOptionalNumber(properties, 'latitude'), getOptionalNumber(properties, 'longitude')) ??
+    parseCoordinateText(getOptionalText(properties, 'coordinates')) ??
+    parseCoordinateText(getOptionalText(properties, 'address'));
   const description = getOptionalText(properties, 'description');
   const price = getOptionalNumber(properties, 'price');
   const photoUrls = getOptionalFileUrls(properties, 'photos');

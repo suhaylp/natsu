@@ -13,16 +13,18 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { StackScreenProps } from '@react-navigation/stack';
 import { useTripsData } from '../data/TripsDataContext';
-import type { Trip } from '../data/trips';
+import type { Booking, Trip } from '../data/trips';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import type {
-  ItineraryApiErrorResponse,
   ItineraryApiItem,
-  ItineraryApiResponse,
   ItineraryCardType,
 } from '../lib/itinerarySync/contracts';
 
 type Props = StackScreenProps<RootStackParamList, 'Itinerary'>;
+type EmbeddedProps = {
+  embedded?: boolean;
+  initialTypeFilter?: TypeFilterKey;
+};
 
 type TypeFilterKey = 'all-types' | 'flights' | 'hotels' | 'sightseeing' | 'activities' | 'food';
 type CityFilterKey = 'all-cities' | string;
@@ -107,39 +109,6 @@ const TYPE_FILTER_OPTIONS: Array<{ key: TypeFilterKey; label: string }> = [
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] as const;
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const;
 
-const flightsApiUrl = process.env.EXPO_PUBLIC_FLIGHTS_API_URL;
-const itineraryApiUrl = process.env.EXPO_PUBLIC_ITINERARY_API_URL;
-const flightsApiKey = process.env.EXPO_PUBLIC_FLIGHTS_API_KEY;
-
-function resolveItineraryApiUrl(): string | undefined {
-  if (typeof itineraryApiUrl === 'string' && itineraryApiUrl.trim()) {
-    return itineraryApiUrl.trim();
-  }
-
-  if (typeof flightsApiUrl !== 'string' || !flightsApiUrl.trim()) {
-    return undefined;
-  }
-
-  const normalized = flightsApiUrl.trim();
-  try {
-    const parsed = new URL(normalized);
-    const nextPath = parsed.pathname.replace(/\/flights\/?$/, '/itinerary');
-    if (nextPath !== parsed.pathname) {
-      parsed.pathname = nextPath;
-      parsed.search = '';
-      return parsed.toString();
-    }
-  } catch {
-    // Fall through to non-URL replacement.
-  }
-
-  if (normalized.includes('/flights')) {
-    return normalized.replace(/\/flights\/?(?:\?.*)?$/, '/itinerary');
-  }
-
-  return undefined;
-}
-
 function normalizeLoose(value: string): string {
   return value
     .normalize('NFD')
@@ -161,10 +130,21 @@ function canonicalCityLabel(raw: string): string {
   const normalized = normalizeLoose(raw);
 
   const aliasMap: Array<{ label: string; aliases: string[] }> = [
+    { label: 'Singapore', aliases: ['singapore'] },
+    { label: 'Bangkok', aliases: ['bangkok'] },
+    { label: 'Chiang Mai', aliases: ['chiang mai'] },
+    { label: 'Chiang Rai', aliases: ['chiang rai'] },
     { label: 'Ko Tao', aliases: ['ko tao', 'koh tao'] },
+    { label: 'Hanoi', aliases: ['hanoi'] },
     { label: 'Da Nang/Hoi An', aliases: ['da nang hoi an', 'da nang', 'hoi an'] },
     { label: 'Ha Long Bay', aliases: ['ha long bay', 'halong bay'] },
     { label: 'Ho Chi Minh City', aliases: ['ho chi minh city', 'saigon'] },
+    { label: 'Tokyo', aliases: ['tokyo', 'haneda', 'narita'] },
+    { label: 'Montreal', aliases: ['montreal'] },
+    { label: 'Ottawa', aliases: ['ottawa'] },
+    { label: 'Vancouver', aliases: ['vancouver'] },
+    { label: 'Calgary', aliases: ['calgary'] },
+    { label: 'Phun Phin', aliases: ['phun phin'] },
   ];
 
   for (const alias of aliasMap) {
@@ -178,24 +158,6 @@ function canonicalCityLabel(raw: string): string {
 
 function cityKeyFromLabel(label: string): string {
   return normalizeLoose(label).replace(/\s+/g, '-');
-}
-
-function parseApiErrorMessage(payload: unknown): string | null {
-  if (!payload || typeof payload !== 'object') {
-    return null;
-  }
-
-  const typed = payload as ItineraryApiErrorResponse;
-  return typed.error?.message ?? null;
-}
-
-function isItineraryApiResponse(payload: unknown): payload is ItineraryApiResponse {
-  if (!payload || typeof payload !== 'object') {
-    return false;
-  }
-
-  const typed = payload as { generatedAt?: unknown; items?: unknown };
-  return typeof typed.generatedAt === 'string' && Array.isArray(typed.items);
 }
 
 function parseIsoDate(value?: string): Date | null {
@@ -240,14 +202,309 @@ function parseTripStartDate(dateRange?: string): Date | null {
   return new Date(Date.UTC(year, monthIndex, day));
 }
 
+function parseTripDayCountFromDateRange(dateRange?: string): number | undefined {
+  if (!dateRange) {
+    return undefined;
+  }
+
+  const match = dateRange.match(
+    /^([A-Za-z]{3,9})\s+(\d{1,2})\s*[–-]\s*(?:(?:([A-Za-z]{3,9})\s+)?(\d{1,2})),\s*(\d{4})/
+  );
+
+  if (!match?.[1] || !match[2] || !match[4] || !match[5]) {
+    return undefined;
+  }
+
+  const startMonthName = match[1];
+  const endMonthName = match[3] ?? startMonthName;
+  const startDay = Number(match[2]);
+  const endDay = Number(match[4]);
+  const year = Number(match[5]);
+
+  const startMonthIndex = MONTHS.findIndex((month) => month.toLowerCase() === startMonthName.slice(0, 3).toLowerCase());
+  const endMonthIndex = MONTHS.findIndex((month) => month.toLowerCase() === endMonthName.slice(0, 3).toLowerCase());
+
+  if (startMonthIndex < 0 || endMonthIndex < 0) {
+    return undefined;
+  }
+
+  if (!Number.isFinite(startDay) || !Number.isFinite(endDay) || !Number.isFinite(year)) {
+    return undefined;
+  }
+
+  const start = new Date(Date.UTC(year, startMonthIndex, startDay));
+  const end = new Date(Date.UTC(year, endMonthIndex, endDay));
+
+  if (!Number.isFinite(start.valueOf()) || !Number.isFinite(end.valueOf())) {
+    return undefined;
+  }
+
+  const diffDays = Math.floor((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000)) + 1;
+  return diffDays > 0 ? diffDays : undefined;
+}
+
+function utcDayValue(date: Date): number {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function parseDateLabel(value: string | undefined, tripStartDate: Date | null): Date | null {
+  if (!value) {
+    return null;
+  }
+
+  const trimmed = value.trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    const iso = parseIsoDate(trimmed);
+    if (iso) {
+      return iso;
+    }
+  }
+
+  const monthMatch = trimmed.match(/([A-Za-z]{3,9})\s+(\d{1,2})/);
+  if (!monthMatch?.[1] || !monthMatch[2]) {
+    return null;
+  }
+
+  const monthIndex = MONTHS.findIndex((month) => month.toLowerCase() === monthMatch[1].slice(0, 3).toLowerCase());
+  if (monthIndex < 0) {
+    return null;
+  }
+
+  const day = Number(monthMatch[2]);
+  if (!Number.isFinite(day)) {
+    return null;
+  }
+
+  const baseYear = tripStartDate ? tripStartDate.getUTCFullYear() : new Date().getUTCFullYear();
+  let candidate = new Date(Date.UTC(baseYear, monthIndex, day));
+
+  if (tripStartDate && candidate.getTime() + 14 * 24 * 60 * 60 * 1000 < tripStartDate.getTime()) {
+    candidate = new Date(Date.UTC(baseYear + 1, monthIndex, day));
+  }
+
+  return candidate;
+}
+
+function deriveDayNumber(date: Date | null, tripStartDate: Date | null): number | undefined {
+  if (!date || !tripStartDate) {
+    return undefined;
+  }
+
+  const delta = Math.floor((utcDayValue(date) - utcDayValue(tripStartDate)) / (24 * 60 * 60 * 1000)) + 1;
+  return delta >= 1 ? delta : undefined;
+}
+
+function parseNights(raw?: string): number | undefined {
+  if (!raw) {
+    return undefined;
+  }
+
+  const match = raw.match(/(\d+)/);
+  if (!match?.[1]) {
+    return undefined;
+  }
+
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function inferHotelNights(booking: Booking, tripStartDate: Date | null): number | undefined {
+  const rawNights = parseNights(booking.hotelStay?.nights);
+  if (typeof rawNights === 'number') {
+    return rawNights;
+  }
+
+  const checkIn = parseDateLabel(booking.hotelStay?.checkInDate ?? booking.activityDate, tripStartDate);
+  const checkOut = parseDateLabel(booking.hotelStay?.checkOutDate, tripStartDate);
+  if (!checkIn || !checkOut) {
+    return undefined;
+  }
+
+  const nights = Math.floor((utcDayValue(checkOut) - utcDayValue(checkIn)) / (24 * 60 * 60 * 1000));
+  return nights > 0 ? nights : undefined;
+}
+
+function isActivityLikeBooking(booking: Booking): boolean {
+  const haystack = [booking.label, booking.activityLocation, booking.notes].filter(Boolean).join(' ').toLowerCase();
+  return /activit|adventure|class|tour|hike|workshop/.test(haystack);
+}
+
+function buildFlightCodeRoute(booking: Booking): string | undefined {
+  if (booking.legs.length === 0) {
+    return undefined;
+  }
+
+  const chain: string[] = [];
+  const firstFrom = booking.legs[0]?.fromCode?.trim().toUpperCase();
+  if (firstFrom) {
+    chain.push(firstFrom);
+  }
+
+  booking.legs.forEach((leg) => {
+    const toCode = leg.toCode?.trim().toUpperCase();
+    if (!toCode) {
+      return;
+    }
+    if (chain[chain.length - 1] !== toCode) {
+      chain.push(toCode);
+    }
+  });
+
+  return chain.length > 0 ? chain.join(' → ') : undefined;
+}
+
+function buildFlightCityRoute(booking: Booking): string | undefined {
+  if (booking.legs.length === 0) {
+    return undefined;
+  }
+
+  const chain: string[] = [];
+  const firstFrom = booking.legs[0]?.fromCity?.trim();
+  if (firstFrom) {
+    chain.push(canonicalCityLabel(firstFrom));
+  }
+
+  booking.legs.forEach((leg) => {
+    const toCity = leg.toCity?.trim();
+    if (!toCity) {
+      return;
+    }
+    const canonical = canonicalCityLabel(toCity);
+    if (chain[chain.length - 1] !== canonical) {
+      chain.push(canonical);
+    }
+  });
+
+  return chain.length > 0 ? chain.join(' → ') : undefined;
+}
+
+function buildFlightDurationSummary(booking: Booking): string | undefined {
+  const durations = booking.legs.map((leg) => leg.duration).filter((duration): duration is string => Boolean(duration));
+  if (durations.length === 0) {
+    return undefined;
+  }
+
+  return durations.length === 1 ? durations[0] : durations.join(' + ');
+}
+
+function typeFromBooking(booking: Booking): ItineraryCardType {
+  if (booking.type === 'flight') {
+    return 'flight';
+  }
+
+  if (booking.type === 'hotel') {
+    return 'hotel';
+  }
+
+  if (booking.type === 'food-tour') {
+    return 'food';
+  }
+
+  if (booking.type === 'concert' || booking.type === 'festival') {
+    return 'activities';
+  }
+
+  if (booking.type === 'event') {
+    return isActivityLikeBooking(booking) ? 'activities' : 'sightseeing';
+  }
+
+  return 'activities';
+}
+
+function inferCityForBooking(booking: Booking, trip: Trip): string {
+  const firstLeg = booking.legs[0];
+  const lastLeg = booking.legs[booking.legs.length - 1];
+
+  const cityCandidate =
+    (booking.type === 'flight' ? lastLeg?.toCity ?? firstLeg?.toCity ?? firstLeg?.fromCity : undefined) ??
+    booking.hotelStay?.city ??
+    parseCityFromText(booking.activityLocation ?? booking.hotelStay?.address) ??
+    lastLeg?.toCity ??
+    firstLeg?.fromCity ??
+    parseCityFromText(booking.label);
+
+  if (cityCandidate) {
+    return canonicalCityLabel(cityCandidate);
+  }
+
+  const titleMatch = parseCityFromText(trip.title);
+  return titleMatch ? canonicalCityLabel(titleMatch) : 'Unassigned';
+}
+
+function mapBookingToItem(booking: Booking, bookingIndex: number, trip: Trip, tripStartDate: Date | null): ItineraryApiItem {
+  const type = typeFromBooking(booking);
+  const firstLeg = booking.legs[0];
+  const lastLeg = booking.legs[booking.legs.length - 1];
+  const city = inferCityForBooking(booking, trip);
+  const routeCodes = type === 'flight' ? buildFlightCodeRoute(booking) : undefined;
+  const routeCities = type === 'flight' ? buildFlightCityRoute(booking) : undefined;
+
+  const dateLabel =
+    (type === 'hotel' ? booking.hotelStay?.checkInDate : undefined) ??
+    firstLeg?.departureDate ??
+    booking.activityDate ??
+    booking.hotelStay?.checkInDate ??
+    lastLeg?.arrivalDate;
+
+  const parsedDate = parseDateLabel(dateLabel, tripStartDate);
+  const dayNumber = deriveDayNumber(parsedDate, tripStartDate);
+
+  const checkIn = booking.hotelStay?.checkInDate ?? booking.activityDate;
+  const checkOut = booking.hotelStay?.checkOutDate;
+  const nights = type === 'hotel' ? inferHotelNights(booking, tripStartDate) : undefined;
+
+  const fromCode = firstLeg?.fromCode?.trim().toUpperCase();
+  const toCode = lastLeg?.toCode?.trim().toUpperCase();
+  const duration = type === 'flight' ? buildFlightDurationSummary(booking) : undefined;
+
+  return {
+    id: booking.id || `booking-${bookingIndex}`,
+    source: type === 'flight' || type === 'hotel' ? 'schedule' : 'ideas',
+    type,
+    city,
+    title: type === 'flight' ? routeCities ?? booking.label : type === 'hotel' ? booking.hotelStay?.name ?? booking.label : booking.label,
+    subtitle:
+      type === 'flight'
+        ? booking.airline ?? booking.label
+        : booking.activityLocation ?? booking.hotelStay?.address ?? city,
+    time: type === 'flight' ? firstLeg?.departureTime : booking.activityTime ?? booking.hotelStay?.checkInTime ?? firstLeg?.departureTime,
+    timeSub: type === 'flight' ? (lastLeg?.arrivalTime ? `Arr ${lastLeg.arrivalTime}` : undefined) : undefined,
+    confirmed: booking.status === 'booked',
+    status: booking.status,
+    dayNumber,
+    dayLabel: dayNumber ? `Day ${dayNumber}` : undefined,
+    location: booking.activityLocation ?? booking.hotelStay?.address,
+    note: booking.notes,
+    originIATA: fromCode,
+    destIATA: toCode,
+    routeCodes,
+    routeCities,
+    flightLegCount: type === 'flight' ? booking.legs.length : undefined,
+    duration,
+    arrivalTime: lastLeg?.arrivalTime,
+    checkIn,
+    nights,
+    checkOut,
+  };
+}
+
+function mapTripBookingsToItems(trip: Trip, tripStartDate: Date | null): ItineraryApiItem[] {
+  return trip.bookings.map((booking, bookingIndex) => mapBookingToItem(booking, bookingIndex, trip, tripStartDate));
+}
+
 function buildTripSubtitle(trip?: Trip, items?: UiItem[]): string {
   const tripRange = trip?.dateRange?.replace(/,\s*\d{4}$/, '').trim();
+  const dayCountFromRange = parseTripDayCountFromDateRange(trip?.dateRange);
 
   const scheduleDayNumbers = Array.from(
-    new Set((items ?? []).filter((item) => item.source === 'schedule' && typeof item.dayNumber === 'number').map((item) => item.dayNumber as number))
+    new Set((items ?? []).filter((item) => typeof item.dayNumber === 'number').map((item) => item.dayNumber as number))
   ).sort((a, b) => a - b);
 
   const dayCount = scheduleDayNumbers.length;
+
+  if (tripRange && typeof dayCountFromRange === 'number') {
+    return `${tripRange} · ${dayCountFromRange} days`;
+  }
 
   if (tripRange && dayCount > 0) {
     return `${tripRange} · ${dayCount} days`;
@@ -375,12 +632,19 @@ function parseCityFromText(text?: string): string | undefined {
     return undefined;
   }
 
-  const segments = text.split(',').map((segment) => segment.trim()).filter(Boolean);
-  if (segments.length === 0) {
-    return undefined;
-  }
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  const dotSegments = normalized.split('·').map((segment) => segment.trim()).filter(Boolean);
+  const commaSegments = normalized.split(',').map((segment) => segment.trim()).filter(Boolean);
+  const arrowSegments = normalized.split('→').map((segment) => segment.trim()).filter(Boolean);
 
-  const candidates = [segments[0], segments[1], text];
+  const candidates = [
+    dotSegments[0],
+    commaSegments[0],
+    commaSegments[1],
+    arrowSegments[arrowSegments.length - 1],
+    normalized,
+  ];
+
   for (const candidate of candidates) {
     if (!candidate) {
       continue;
@@ -586,8 +850,8 @@ function buildSegments(items: UiItem[], tripStartDate: Date | null): CitySegment
     .filter((segment): segment is CitySegment => Boolean(segment));
 }
 
-function flattenRows(segments: CitySegment[], error: string | null): RowItem[] {
-  const rows: RowItem[] = [{ kind: 'header', key: 'header' }];
+function flattenRows(segments: CitySegment[], error: string | null, includeHeader = true): RowItem[] {
+  const rows: RowItem[] = includeHeader ? [{ kind: 'header', key: 'header' }] : [];
 
   if (error) {
     rows.push({ kind: 'error', key: 'error', message: error });
@@ -785,7 +1049,6 @@ function CountryDivider({ segment }: { segment: CitySegment }) {
       <View style={[styles.dividerCityPill, { backgroundColor: palette.bg }]}> 
         <Text style={[styles.dividerCityText, { color: palette.text }]}>{segment.cityLabel}</Text>
       </View>
-      <Text style={styles.dividerNightsText}>{`${segment.nights} nights`}</Text>
     </View>
   );
 }
@@ -827,11 +1090,15 @@ function ItineraryCard({ item }: { item: UiItem }) {
 
         {item.type === 'flight' ? (
           <View style={styles.flightFooter}>
-            <Text style={styles.flightRouteText}>{`${item.originIATA ?? '---'} ——✈—— ${item.destIATA ?? '---'}`}</Text>
+            <Text style={styles.flightRouteText}>{item.routeCodes ?? `${item.originIATA ?? '---'} → ${item.destIATA ?? '---'}`}</Text>
             <Text style={styles.flightSubText}>
-              {[item.duration, item.arrivalTime ? `Arrive ${item.arrivalTime}` : undefined].filter(Boolean).join(' · ') ||
-                item.note ||
-                'Flight details'}
+              {[
+                item.flightLegCount && item.flightLegCount > 1 ? `${item.flightLegCount} legs` : undefined,
+                item.duration,
+                item.arrivalTime ? `Arrive ${item.arrivalTime}` : undefined,
+              ]
+                .filter(Boolean)
+                .join(' · ') || item.note || 'Flight details'}
             </Text>
           </View>
         ) : null}
@@ -928,49 +1195,24 @@ function LoadingSkeleton({ pulseOpacity }: { pulseOpacity: Animated.Value }) {
   );
 }
 
-async function fetchRemoteItinerary(): Promise<ItineraryApiResponse> {
-  const endpoint = resolveItineraryApiUrl();
-  if (!endpoint) {
-    throw new Error('Itinerary sync is not configured. Set EXPO_PUBLIC_ITINERARY_API_URL.');
-  }
-
-  const response = await fetch(endpoint, {
-    method: 'GET',
-    headers: {
-      Accept: 'application/json',
-      ...(flightsApiKey ? { 'x-api-key': flightsApiKey } : {}),
-    },
-  });
-
-  const payload = (await response.json().catch(() => null)) as unknown;
-
-  if (!response.ok) {
-    const apiMessage = parseApiErrorMessage(payload);
-    throw new Error(apiMessage ?? `Itinerary sync failed (${response.status}).`);
-  }
-
-  if (!isItineraryApiResponse(payload)) {
-    throw new Error('Itinerary sync returned an unexpected response shape.');
-  }
-
-  return payload;
-}
-
-export function ItineraryScreen({ navigation, route }: Props) {
-  const { trips } = useTripsData();
+export function ItineraryScreen({ navigation, route, embedded = false, initialTypeFilter = 'all-types' }: Props & EmbeddedProps) {
+  const { trips, isLoading: tripsLoading, error: tripsError, refresh: refreshTrips } = useTripsData();
   const trip = trips.find((candidate) => candidate.id === route.params.tripId);
 
-  const [rawItems, setRawItems] = useState<ItineraryApiItem[]>([]);
   const [cityFilter, setCityFilter] = useState<CityFilterKey>('all-cities');
-  const [typeFilter, setTypeFilter] = useState<TypeFilterKey>('all-types');
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const refreshInFlightRef = useRef(false);
-
+  const [typeFilter, setTypeFilter] = useState<TypeFilterKey>(initialTypeFilter);
+  const [expandedIdeaDayKeys, setExpandedIdeaDayKeys] = useState<Record<string, boolean>>({});
   const pulseOpacity = useRef(new Animated.Value(1)).current;
+  const tripStartDate = useMemo(() => parseTripStartDate(trip?.dateRange), [trip?.dateRange]);
+  const rawItems = useMemo(() => (trip ? mapTripBookingsToItems(trip, tripStartDate) : []), [trip, tripStartDate]);
+  const shouldShowSkeleton = tripsLoading && rawItems.length === 0;
 
   useEffect(() => {
-    if (!isLoading) {
+    setTypeFilter(initialTypeFilter);
+  }, [initialTypeFilter]);
+
+  useEffect(() => {
+    if (!shouldShowSkeleton) {
       pulseOpacity.setValue(1);
       return;
     }
@@ -987,35 +1229,11 @@ export function ItineraryScreen({ navigation, route }: Props) {
     return () => {
       loop.stop();
     };
-  }, [isLoading, pulseOpacity]);
-
-  const refresh = useCallback(async () => {
-    if (refreshInFlightRef.current) {
-      return;
-    }
-
-    refreshInFlightRef.current = true;
-    setIsLoading(true);
-
-    try {
-      const payload = await fetchRemoteItinerary();
-      setRawItems(payload.items);
-      setError(null);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Couldn't load itinerary — tap to retry";
-      setError(message);
-    } finally {
-      setIsLoading(false);
-      refreshInFlightRef.current = false;
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
+  }, [pulseOpacity, shouldShowSkeleton]);
 
   const normalizedItems = useMemo(() => normalizeUiItems(rawItems), [rawItems]);
   const tripScopedItems = useMemo(() => scopeItemsToTrip(normalizedItems, trip), [normalizedItems, trip]);
+  const syncError = tripScopedItems.length === 0 ? tripsError : null;
 
   useEffect(() => {
     if (cityFilter === 'all-cities') {
@@ -1028,8 +1246,6 @@ export function ItineraryScreen({ navigation, route }: Props) {
     }
   }, [cityFilter, tripScopedItems]);
 
-  const tripStartDate = useMemo(() => parseTripStartDate(trip?.dateRange), [trip?.dateRange]);
-
   const baseSegments = useMemo(() => buildSegments(tripScopedItems, tripStartDate), [tripScopedItems, tripStartDate]);
 
   const filteredSegments = useMemo(
@@ -1037,12 +1253,37 @@ export function ItineraryScreen({ navigation, route }: Props) {
     [baseSegments, cityFilter, typeFilter]
   );
 
-  const rows = useMemo(() => flattenRows(filteredSegments, error), [filteredSegments, error]);
+  const rows = useMemo(() => flattenRows(filteredSegments, syncError, !embedded), [embedded, filteredSegments, syncError]);
 
   const cityOptions = useMemo(() => cityFilterOptions(tripScopedItems), [tripScopedItems]);
 
   const tripTitle = trip?.title ?? 'Itinerary';
   const tripSubtitle = buildTripSubtitle(trip, tripScopedItems);
+
+  useEffect(() => {
+    const availableIdeaKeys = new Set(
+      filteredSegments
+        .flatMap((segment) => segment.days)
+        .filter((day) => typeof day.dayNumber !== 'number')
+        .map((day) => day.key)
+    );
+
+    setExpandedIdeaDayKeys((previous) => {
+      const retained = Object.entries(previous).filter(([dayKey]) => availableIdeaKeys.has(dayKey));
+      if (retained.length === Object.keys(previous).length) {
+        return previous;
+      }
+
+      return Object.fromEntries(retained);
+    });
+  }, [filteredSegments]);
+
+  const toggleIdeasDay = useCallback((dayKey: string) => {
+    setExpandedIdeaDayKeys((previous) => ({
+      ...previous,
+      [dayKey]: !previous[dayKey],
+    }));
+  }, []);
 
   const renderRow = useCallback(
     ({ item }: ListRenderItemInfo<RowItem>) => {
@@ -1063,7 +1304,7 @@ export function ItineraryScreen({ navigation, route }: Props) {
 
       if (item.kind === 'error') {
         return (
-          <Pressable style={styles.errorBanner} onPress={() => void refresh()}>
+          <Pressable style={styles.errorBanner} onPress={() => void refreshTrips()}>
             <Text style={styles.errorBannerText}>
               {item.message ? `${item.message} Tap to retry.` : "Couldn't load itinerary — tap to retry"}
             </Text>
@@ -1084,20 +1325,71 @@ export function ItineraryScreen({ navigation, route }: Props) {
         return <CountryDivider segment={item.segment} />;
       }
 
+      const isIdeasDay = typeof item.day.dayNumber !== 'number';
+      const isIdeasExpanded = !isIdeasDay || Boolean(expandedIdeaDayKeys[item.day.key]);
+
       return (
         <View style={styles.dayWrap}>
-          <Text style={styles.dayLabel}>{item.day.label}</Text>
-          {item.day.items.map((dayItem) => (
-            <ItineraryCard key={dayItem.id} item={dayItem} />
-          ))}
+          {isIdeasDay ? (
+            <Pressable
+              style={styles.ideasHeaderRow}
+              onPress={() => toggleIdeasDay(item.day.key)}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.day.label} section`}
+              accessibilityHint={isIdeasExpanded ? 'Collapse ideas' : 'Expand ideas'}
+            >
+              <Text style={styles.dayLabel}>{`${item.day.label} (${item.day.items.length})`}</Text>
+              <Text style={styles.ideasChevron}>{isIdeasExpanded ? '▾' : '▸'}</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.dayLabel}>{item.day.label}</Text>
+          )}
+
+          {isIdeasExpanded
+            ? item.day.items.map((dayItem) => (
+                <ItineraryCard key={dayItem.id} item={dayItem} />
+              ))
+            : null}
         </View>
       );
     },
-    [cityFilter, cityOptions, navigation, refresh, tripSubtitle, tripTitle, typeFilter]
+    [cityFilter, cityOptions, expandedIdeaDayKeys, navigation, refreshTrips, toggleIdeasDay, tripSubtitle, tripTitle, typeFilter]
   );
 
-  if (isLoading && rawItems.length === 0) {
+  if (shouldShowSkeleton) {
+    if (embedded) {
+      return (
+        <View style={styles.embeddedScreen}>
+          <Animated.View style={[styles.card, { opacity: pulseOpacity, marginHorizontal: 12, marginTop: 8 }]}>
+            <View style={[styles.iconWrap, styles.skeletonBlock]} />
+            <View style={styles.cardBody}>
+              <View style={[styles.skeletonLine, { width: '72%', height: 14 }]} />
+              <View style={[styles.skeletonLine, { width: '56%', height: 11, marginTop: 8 }]} />
+            </View>
+            <View style={styles.timeColumn}>
+              <View style={[styles.skeletonLine, { width: 42, height: 12 }]} />
+            </View>
+          </Animated.View>
+        </View>
+      );
+    }
+
     return <LoadingSkeleton pulseOpacity={pulseOpacity} />;
+  }
+
+  if (embedded) {
+    return (
+      <View style={styles.embeddedScreen}>
+        <FlatList
+          data={rows}
+          keyExtractor={(row) => row.key}
+          renderItem={renderRow}
+          contentContainerStyle={styles.embeddedListContent}
+          showsVerticalScrollIndicator={false}
+          removeClippedSubviews={true}
+        />
+      </View>
+    );
   }
 
   return (
@@ -1122,6 +1414,10 @@ const styles = StyleSheet.create({
   screen: {
     flex: 1,
     backgroundColor: colors.screenBg,
+  },
+  embeddedScreen: {
+    flex: 1,
+    backgroundColor: 'transparent',
   },
   safeArea: {
     flex: 1,
@@ -1204,6 +1500,11 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
     gap: 8,
   },
+  embeddedListContent: {
+    paddingHorizontal: 8,
+    paddingBottom: 20,
+    gap: 8,
+  },
   dividerWrap: {
     marginTop: 8,
     marginBottom: 4,
@@ -1230,15 +1531,6 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '500',
   },
-  dividerNightsText: {
-    marginLeft: 'auto',
-    color: colors.secondaryText,
-    fontSize: 11,
-    fontWeight: '500',
-    backgroundColor: colors.screenBg,
-    paddingHorizontal: 4,
-    zIndex: 1,
-  },
   dayWrap: {
     marginBottom: 2,
   },
@@ -1250,6 +1542,17 @@ const styles = StyleSheet.create({
     letterSpacing: 0.66,
     marginTop: 6,
     marginBottom: 8,
+  },
+  ideasHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  ideasChevron: {
+    color: colors.tertiaryText,
+    fontSize: 14,
+    fontWeight: '500',
+    marginTop: 2,
   },
   card: {
     backgroundColor: colors.cardBg,

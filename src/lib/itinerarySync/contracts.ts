@@ -20,6 +20,9 @@ export type ItineraryApiItem = {
   note?: string;
   originIATA?: string;
   destIATA?: string;
+  routeCodes?: string;
+  routeCities?: string;
+  flightLegCount?: number;
   duration?: string;
   arrivalTime?: string;
   checkIn?: string;

@@ -287,36 +287,45 @@ export function TripMap({
   }, [onMapPress]);
 
   const focusedFlightSegments = useMemo(() => {
-    if (!selectedPinId || focusedActivity?.bookingType !== 'flight') {
+    if (!selectedPinId || !focusedPin) {
+      return [];
+    }
+
+    const resolvedFlightActivity =
+      focusedActivity?.bookingType === 'flight'
+        ? focusedActivity
+        : focusedPin.activities.find((activity) => activity.bookingType === 'flight') ?? null;
+
+    if (!resolvedFlightActivity) {
       return [];
     }
 
     const byBooking = routeSegments.filter((segment) =>
-      segment.id.startsWith(`route-${focusedActivity.bookingId}-`)
+      segment.id.startsWith(`route-${resolvedFlightActivity.bookingId}-`)
     );
     if (byBooking.length > 0) {
       return byBooking;
     }
 
     if (
-      focusedActivity.fromLatitude !== undefined &&
-      focusedActivity.fromLongitude !== undefined &&
-      focusedActivity.toLatitude !== undefined &&
-      focusedActivity.toLongitude !== undefined
+      resolvedFlightActivity.fromLatitude !== undefined &&
+      resolvedFlightActivity.fromLongitude !== undefined &&
+      resolvedFlightActivity.toLatitude !== undefined &&
+      resolvedFlightActivity.toLongitude !== undefined
     ) {
       return [
         {
-          id: `focused-${focusedActivity.id}`,
-          fromLatitude: focusedActivity.fromLatitude,
-          fromLongitude: focusedActivity.fromLongitude,
-          toLatitude: focusedActivity.toLatitude,
-          toLongitude: focusedActivity.toLongitude,
+          id: `focused-${resolvedFlightActivity.id}`,
+          fromLatitude: resolvedFlightActivity.fromLatitude,
+          fromLongitude: resolvedFlightActivity.fromLongitude,
+          toLatitude: resolvedFlightActivity.toLatitude,
+          toLongitude: resolvedFlightActivity.toLongitude,
         },
       ];
     }
 
     return [];
-  }, [focusedActivity, routeSegments, selectedPinId]);
+  }, [focusedActivity, focusedPin, routeSegments, selectedPinId]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {

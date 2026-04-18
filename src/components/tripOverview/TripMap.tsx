@@ -234,15 +234,25 @@ export function TripMap({
   const initialRegion = useMemo(() => getInitialRegion(pins), [pins]);
   const mapRef = useRef<MapView | null>(null);
   const markerPressInProgressRef = useRef(false);
+  const mapPressBlockedUntilRef = useRef(0);
   const markerPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [trackMarkerViewChanges, setTrackMarkerViewChanges] = useState(true);
   const focusedFlightSegments = useMemo(() => {
-    if (!selectedPinId || focusedActivity?.bookingType !== 'flight') {
+    if (!selectedPinId || !focusedPin) {
+      return [];
+    }
+
+    const resolvedFlightActivity =
+      focusedActivity?.bookingType === 'flight'
+        ? focusedActivity
+        : focusedPin.activities.find((activity) => activity.bookingType === 'flight') ?? null;
+
+    if (!resolvedFlightActivity) {
       return [];
     }
 
     const byBooking = routeSegments.filter((segment) =>
-      segment.id.startsWith(`route-${focusedActivity.bookingId}-`)
+      segment.id.startsWith(`route-${resolvedFlightActivity.bookingId}-`)
     );
 
     if (byBooking.length > 0) {
@@ -250,24 +260,24 @@ export function TripMap({
     }
 
     if (
-      focusedActivity.fromLatitude !== undefined &&
-      focusedActivity.fromLongitude !== undefined &&
-      focusedActivity.toLatitude !== undefined &&
-      focusedActivity.toLongitude !== undefined
+      resolvedFlightActivity.fromLatitude !== undefined &&
+      resolvedFlightActivity.fromLongitude !== undefined &&
+      resolvedFlightActivity.toLatitude !== undefined &&
+      resolvedFlightActivity.toLongitude !== undefined
     ) {
       return [
         {
-          id: `focused-${focusedActivity.id}`,
-          fromLatitude: focusedActivity.fromLatitude,
-          fromLongitude: focusedActivity.fromLongitude,
-          toLatitude: focusedActivity.toLatitude,
-          toLongitude: focusedActivity.toLongitude,
+          id: `focused-${resolvedFlightActivity.id}`,
+          fromLatitude: resolvedFlightActivity.fromLatitude,
+          fromLongitude: resolvedFlightActivity.fromLongitude,
+          toLatitude: resolvedFlightActivity.toLatitude,
+          toLongitude: resolvedFlightActivity.toLongitude,
         },
       ];
     }
 
     return [];
-  }, [focusedActivity, routeSegments, selectedPinId]);
+  }, [focusedActivity, focusedPin, routeSegments, selectedPinId]);
 
   useEffect(() => {
     if (!mapRef.current) {
@@ -353,6 +363,9 @@ export function TripMap({
         rotateEnabled={true}
         pitchEnabled={true}
         onPress={(event) => {
+          if (Date.now() < mapPressBlockedUntilRef.current) {
+            return;
+          }
           if (markerPressInProgressRef.current) {
             return;
           }
@@ -392,6 +405,7 @@ export function TripMap({
               coordinate={{ latitude: pin.latitude, longitude: pin.longitude }}
               onPress={() => {
                 markerPressInProgressRef.current = true;
+                mapPressBlockedUntilRef.current = Date.now() + 700;
                 if (markerPressTimeoutRef.current) {
                   clearTimeout(markerPressTimeoutRef.current);
                 }
