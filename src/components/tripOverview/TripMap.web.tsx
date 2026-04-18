@@ -11,6 +11,7 @@ type TripMapProps = {
   focusedPin: MapPin | null;
   focusedActivity: StopActivity | null;
   onPinPress: (pin: MapPin) => void;
+  onMapPress: () => void;
 };
 
 type PinCategory = 'flight' | 'hotel' | 'sightseeing' | 'activities' | 'food';
@@ -260,34 +261,62 @@ function createPinIcon(pin: MapPin, options: { isSelected: boolean }): L.DivIcon
 
 export function TripMap({
   pins,
-  routeSegments: _routeSegments,
+  routeSegments,
   selectedPinId,
   focusedPin,
   focusedActivity,
   onPinPress,
+  onMapPress,
 }: TripMapProps) {
   const containerRef = useRef<HTMLElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
+  const routeLinesLayerRef = useRef<L.LayerGroup | null>(null);
+  const markerClickRef = useRef(false);
+  const onPinPressRef = useRef(onPinPress);
+  const onMapPressRef = useRef(onMapPress);
+  const hasAutoFitViewportRef = useRef(false);
+  const hasSeenFocusedSelectionRef = useRef(false);
 
-  const focusedFlightSegment = useMemo(() => {
+  useEffect(() => {
+    onPinPressRef.current = onPinPress;
+  }, [onPinPress]);
+
+  useEffect(() => {
+    onMapPressRef.current = onMapPress;
+  }, [onMapPress]);
+
+  const focusedFlightSegments = useMemo(() => {
+    if (!selectedPinId || focusedActivity?.bookingType !== 'flight') {
+      return [];
+    }
+
+    const byBooking = routeSegments.filter((segment) =>
+      segment.id.startsWith(`route-${focusedActivity.bookingId}-`)
+    );
+    if (byBooking.length > 0) {
+      return byBooking;
+    }
+
     if (
-      focusedActivity?.bookingType === 'flight' &&
       focusedActivity.fromLatitude !== undefined &&
       focusedActivity.fromLongitude !== undefined &&
       focusedActivity.toLatitude !== undefined &&
       focusedActivity.toLongitude !== undefined
     ) {
-      return {
-        fromLatitude: focusedActivity.fromLatitude,
-        fromLongitude: focusedActivity.fromLongitude,
-        toLatitude: focusedActivity.toLatitude,
-        toLongitude: focusedActivity.toLongitude,
-      };
+      return [
+        {
+          id: `focused-${focusedActivity.id}`,
+          fromLatitude: focusedActivity.fromLatitude,
+          fromLongitude: focusedActivity.fromLongitude,
+          toLatitude: focusedActivity.toLatitude,
+          toLongitude: focusedActivity.toLongitude,
+        },
+      ];
     }
 
-    return null;
-  }, [focusedActivity]);
+    return [];
+  }, [focusedActivity, routeSegments, selectedPinId]);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) {
@@ -310,24 +339,35 @@ export function TripMap({
     }).addTo(map);
 
     markersLayerRef.current = L.layerGroup().addTo(map);
+    routeLinesLayerRef.current = L.layerGroup().addTo(map);
+    map.on('click', () => {
+      if (markerClickRef.current) {
+        markerClickRef.current = false;
+        return;
+      }
+      onMapPressRef.current();
+    });
     mapRef.current = map;
 
     return () => {
       map.remove();
       mapRef.current = null;
       markersLayerRef.current = null;
+      routeLinesLayerRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     const map = mapRef.current;
     const markersLayer = markersLayerRef.current;
+    const routeLinesLayer = routeLinesLayerRef.current;
 
-    if (!map || !markersLayer) {
+    if (!map || !markersLayer || !routeLinesLayer) {
       return;
     }
 
     markersLayer.clearLayers();
+    routeLinesLayer.clearLayers();
 
     const renderOrder = [...pins].sort((a, b) => {
       if (a.id === selectedPinId) {
@@ -346,15 +386,30 @@ export function TripMap({
         keyboard: false,
         zIndexOffset: isSelected ? 2000 : 100,
       });
-      marker.on('click', () => onPinPress(pin));
+      marker.on('click', () => {
+        markerClickRef.current = true;
+        onPinPressRef.current(pin);
+      });
       marker.addTo(markersLayer);
     });
 
-    if (focusedFlightSegment) {
-      const bounds = L.latLngBounds(
-        [focusedFlightSegment.fromLatitude, focusedFlightSegment.fromLongitude],
-        [focusedFlightSegment.toLatitude, focusedFlightSegment.toLongitude]
-      );
+    if (focusedFlightSegments.length > 0) {
+      hasSeenFocusedSelectionRef.current = true;
+      const coordinates = focusedFlightSegments.flatMap((segment) => {
+        const from: [number, number] = [segment.fromLatitude, segment.fromLongitude];
+        const to: [number, number] = [segment.toLatitude, segment.toLongitude];
+
+        L.polyline([from, to], {
+          color: colors.flight,
+          weight: 2,
+          opacity: 0.9,
+          dashArray: '8 6',
+        }).addTo(routeLinesLayer);
+
+        return [from, to];
+      });
+
+      const bounds = L.latLngBounds(coordinates);
       map.fitBounds(bounds.pad(0.55), {
         animate: true,
         duration: 0.85,
@@ -364,6 +419,7 @@ export function TripMap({
     }
 
     if (focusedPin) {
+      hasSeenFocusedSelectionRef.current = true;
       map.flyTo([focusedPin.latitude, focusedPin.longitude], 11.5, {
         animate: true,
         duration: 0.75,
@@ -372,9 +428,14 @@ export function TripMap({
       return;
     }
 
+    if (hasSeenFocusedSelectionRef.current || hasAutoFitViewportRef.current) {
+      return;
+    }
+
     const allCoordinates = pins.map((pin) => [pin.latitude, pin.longitude] as [number, number]);
 
     if (allCoordinates.length === 1) {
+      hasAutoFitViewportRef.current = true;
       map.flyTo(allCoordinates[0], 11.5, {
         animate: true,
         duration: 0.75,
@@ -384,6 +445,7 @@ export function TripMap({
     }
 
     if (allCoordinates.length > 1) {
+      hasAutoFitViewportRef.current = true;
       map.fitBounds(L.latLngBounds(allCoordinates), {
         padding: [48, 48],
         animate: true,
@@ -391,7 +453,7 @@ export function TripMap({
         easeLinearity: 0.25,
       });
     }
-  }, [focusedFlightSegment, focusedPin, onPinPress, pins, selectedPinId]);
+  }, [focusedFlightSegments, focusedPin, pins, selectedPinId]);
 
   return (
     <View style={styles.container}>

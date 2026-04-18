@@ -5,6 +5,7 @@ import { EventDetailScreen } from '../screens/EventDetailScreen';
 import { FlightDetailScreen } from '../screens/FlightDetailScreen';
 import { HomeScreen } from '../screens/HomeScreen';
 import { HotelDetailScreen } from '../screens/HotelDetailScreen';
+import { ItineraryScreen } from '../screens/ItineraryScreen';
 import { MoneyStuffScreen } from '../screens/MoneyStuffScreen';
 import { TripDetailScreen } from '../screens/TripDetailScreen';
 import { TripsScreen } from '../screens/TripsScreen';
@@ -14,6 +15,7 @@ export type RootStackParamList = {
   Home: undefined;
   Trips: undefined;
   TripDetail: { tripId: string };
+  Itinerary: { tripId: string };
   FlightDetail: { tripId: string; flightId: string };
   HotelDetail: { tripId: string; bookingId: string };
   EventDetail: {
@@ -46,6 +48,7 @@ export function AppNavigator() {
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Trips" component={TripsScreen} />
       <Stack.Screen name="TripDetail" component={TripDetailScreen} />
+      <Stack.Screen name="Itinerary" component={ItineraryScreen} />
       <Stack.Screen name="FlightDetail" component={FlightDetailScreen} />
       <Stack.Screen name="HotelDetail" component={HotelDetailScreen} />
       <Stack.Screen name="EventDetail" component={EventDetailScreen} />

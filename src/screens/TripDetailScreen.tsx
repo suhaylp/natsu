@@ -1039,6 +1039,7 @@ export function TripDetailScreen({ navigation, route }: Props) {
   const [flightPagerWidth, setFlightPagerWidth] = useState(0);
   const sheetTranslate = useRef(new Animated.Value(0)).current;
   const flightPagerRef = useRef<ScrollView | null>(null);
+  const hasInitializedSelectionRef = useRef(false);
 
   const sheetSnapOpen = 0;
   const sheetSnapClosed = 186;
@@ -1087,9 +1088,17 @@ export function TripDetailScreen({ navigation, route }: Props) {
       return;
     }
 
-    setSelectedPinId((previous) =>
-      previous && filteredMapData.pins.some((pin) => pin.id === previous) ? previous : filteredMapData.pins[0]?.id ?? null
-    );
+    setSelectedPinId((previous) => {
+      if (!previous) {
+        if (!hasInitializedSelectionRef.current) {
+          hasInitializedSelectionRef.current = true;
+          return filteredMapData.pins[0]?.id ?? null;
+        }
+        return previous;
+      }
+
+      return filteredMapData.pins.some((pin) => pin.id === previous) ? previous : filteredMapData.pins[0]?.id ?? null;
+    });
   }, [filteredMapData.pins]);
 
   const selectedPin = useMemo(() => {
@@ -1100,38 +1109,37 @@ export function TripDetailScreen({ navigation, route }: Props) {
     return filteredMapData.pins.find((pin) => pin.id === selectedPinId) ?? null;
   }, [filteredMapData.pins, selectedPinId]);
 
-  const allVisibleActivities = useMemo(
-    () => filteredMapData.pins.flatMap((pin) => pin.activities),
-    [filteredMapData.pins]
-  );
-
   const focusedActivity = useMemo(() => {
+    if (!selectedPin) {
+      return null;
+    }
+
     if (selectedActivityId) {
-      const byId = allVisibleActivities.find((activity) => activity.id === selectedActivityId);
+      const byId = selectedPin.activities.find((activity) => activity.id === selectedActivityId);
       if (byId) {
         return byId;
       }
     }
 
     return getDefaultActivityForPin(selectedPin);
-  }, [allVisibleActivities, selectedActivityId, selectedPin]);
+  }, [selectedActivityId, selectedPin]);
 
   useEffect(() => {
     animateSheetTo(focusedActivity ? sheetSnapOpen : sheetSnapClosed);
   }, [focusedActivity?.id]);
 
   useEffect(() => {
-    if (allVisibleActivities.length === 0) {
+    if (!selectedPin || selectedPin.activities.length === 0) {
       setSelectedActivityId(null);
       return;
     }
 
     setSelectedActivityId((previous) =>
-      previous && allVisibleActivities.some((activity) => activity.id === previous)
+      previous && selectedPin.activities.some((activity) => activity.id === previous)
         ? previous
-        : getDefaultActivityForPin(selectedPin)?.id ?? allVisibleActivities[0]?.id ?? null
+        : getDefaultActivityForPin(selectedPin)?.id ?? null
     );
-  }, [allVisibleActivities, selectedPin?.id]);
+  }, [selectedPin]);
 
   const swipeActivities = useMemo(
     () => (focusedActivity ? getSwipeActivities(filteredMapData.pins, getSwipeGroup(focusedActivity)) : []),
@@ -1243,6 +1251,11 @@ export function TripDetailScreen({ navigation, route }: Props) {
           setSelectedActivityId(getDefaultActivityForPin(pin)?.id ?? null);
           animateSheetTo(sheetSnapOpen);
         }}
+        onMapPress={() => {
+          setSelectedPinId(null);
+          setSelectedActivityId(null);
+          animateSheetTo(sheetSnapClosed);
+        }}
       />
 
       <SafeAreaView style={styles.topOverlay} pointerEvents="box-none">
@@ -1256,7 +1269,12 @@ export function TripDetailScreen({ navigation, route }: Props) {
               {trip.title}
             </Text>
 
-            <View style={styles.backButtonPlaceholder} />
+            <Pressable
+              onPress={() => navigation.navigate('Itinerary', { tripId: trip.id })}
+              style={styles.itineraryButton}
+            >
+              <Text style={styles.itineraryButtonText}>≡</Text>
+            </Pressable>
           </View>
 
           <ScrollView
@@ -1353,13 +1371,20 @@ export function TripDetailScreen({ navigation, route }: Props) {
                         const experienceType = getExperienceType(pageActivity);
                         const isFlight = pageActivity.bookingType === 'flight';
                         const isHotel = pageActivity.bookingType === 'hotel';
+                        const isSplitFlightBooking =
+                          isFlight &&
+                          pages.length > 1 &&
+                          pages.every(
+                            (candidate) =>
+                              candidate.bookingType === 'flight' && candidate.bookingId === pageActivity.bookingId
+                          );
                         const headerTagLabel = isFlight
-                          ? pages.length > 1 ? `Flight ${pageIndex + 1}/${pages.length}` : 'Flight'
+                          ? isSplitFlightBooking
+                            ? `Flight ${pageIndex + 1}/${pages.length}`
+                            : 'Flight'
                           : isHotel
-                            ? pages.length > 1 ? `Hotel ${pageIndex + 1}/${pages.length}` : 'Hotel'
-                            : pages.length > 1
-                              ? `${getExperienceLabel(experienceType)} ${pageIndex + 1}/${pages.length}`
-                              : getExperienceLabel(experienceType);
+                            ? 'Hotel'
+                            : getExperienceLabel(experienceType);
                         const headerTagStyle = isFlight
                           ? styles.headerTypeTagFlight
                           : isHotel
@@ -1625,9 +1650,22 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#dce8df',
   },
-  backButtonPlaceholder: {
+  itineraryButton: {
     width: 34,
     height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#dce8df',
+    borderWidth: 1,
+    borderColor: 'rgba(30,61,47,0.2)',
+  },
+  itineraryButtonText: {
+    color: colors.accent,
+    fontSize: 20,
+    fontWeight: '500',
+    lineHeight: 20,
+    marginTop: -1,
   },
   backText: {
     color: colors.accent,

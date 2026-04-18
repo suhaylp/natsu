@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import MapView, { Marker } from 'react-native-maps';
+import MapView, { Marker, Polyline } from 'react-native-maps';
 import Svg, { Path } from 'react-native-svg';
 import type { MapPin, RouteSegment, StopActivity } from './types';
 
@@ -11,6 +11,7 @@ type TripMapProps = {
   focusedPin: MapPin | null;
   focusedActivity: StopActivity | null;
   onPinPress: (pin: MapPin) => void;
+  onMapPress: () => void;
 };
 
 type PinCategory = 'flight' | 'hotel' | 'sightseeing' | 'activities' | 'food';
@@ -223,35 +224,74 @@ function PinGlyph({ category }: { category: PinCategory }) {
 
 export function TripMap({
   pins,
-  routeSegments: _routeSegments,
+  routeSegments,
   selectedPinId,
   focusedPin,
   focusedActivity,
   onPinPress,
+  onMapPress,
 }: TripMapProps) {
   const initialRegion = useMemo(() => getInitialRegion(pins), [pins]);
-  const mapKey = `pins:${pins.map((pin) => pin.id).join('|')}`;
   const mapRef = useRef<MapView | null>(null);
+  const markerPressInProgressRef = useRef(false);
+  const markerPressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [trackMarkerViewChanges, setTrackMarkerViewChanges] = useState(true);
+  const focusedFlightSegments = useMemo(() => {
+    if (!selectedPinId || focusedActivity?.bookingType !== 'flight') {
+      return [];
+    }
+
+    const byBooking = routeSegments.filter((segment) =>
+      segment.id.startsWith(`route-${focusedActivity.bookingId}-`)
+    );
+
+    if (byBooking.length > 0) {
+      return byBooking;
+    }
+
+    if (
+      focusedActivity.fromLatitude !== undefined &&
+      focusedActivity.fromLongitude !== undefined &&
+      focusedActivity.toLatitude !== undefined &&
+      focusedActivity.toLongitude !== undefined
+    ) {
+      return [
+        {
+          id: `focused-${focusedActivity.id}`,
+          fromLatitude: focusedActivity.fromLatitude,
+          fromLongitude: focusedActivity.fromLongitude,
+          toLatitude: focusedActivity.toLatitude,
+          toLongitude: focusedActivity.toLongitude,
+        },
+      ];
+    }
+
+    return [];
+  }, [focusedActivity, routeSegments, selectedPinId]);
 
   useEffect(() => {
     if (!mapRef.current) {
       return;
     }
 
-    if (
-      focusedActivity?.bookingType === 'flight' &&
-      focusedActivity.fromLatitude !== undefined &&
-      focusedActivity.fromLongitude !== undefined &&
-      focusedActivity.toLatitude !== undefined &&
-      focusedActivity.toLongitude !== undefined
-    ) {
-      const from = { latitude: focusedActivity.fromLatitude, longitude: focusedActivity.fromLongitude };
-      const to = { latitude: focusedActivity.toLatitude, longitude: focusedActivity.toLongitude };
-      const hasSpan =
-        Math.abs(from.latitude - to.latitude) > 0.02 || Math.abs(from.longitude - to.longitude) > 0.02;
+    if (focusedFlightSegments.length > 0) {
+      const flightCoordinates = focusedFlightSegments.flatMap((segment) => [
+        { latitude: segment.fromLatitude, longitude: segment.fromLongitude },
+        { latitude: segment.toLatitude, longitude: segment.toLongitude },
+      ]);
+      const hasSpan = flightCoordinates.some((point, index) => {
+        if (index === 0) {
+          return false;
+        }
+        const first = flightCoordinates[0];
+        return (
+          Math.abs(first.latitude - point.latitude) > 0.02 ||
+          Math.abs(first.longitude - point.longitude) > 0.02
+        );
+      });
 
       if (hasSpan) {
-        mapRef.current.fitToCoordinates([from, to], {
+        mapRef.current.fitToCoordinates(flightCoordinates, {
           edgePadding: {
             top: 120,
             right: 72,
@@ -280,21 +320,31 @@ export function TripMap({
         duration: 520,
       }
     );
-  }, [focusedActivity?.id, focusedPin?.id]);
+  }, [focusedFlightSegments, focusedPin?.id]);
 
   useEffect(() => {
-    if (!mapRef.current || focusedPin || focusedActivity?.bookingType === 'flight') {
-      return;
-    }
+    setTrackMarkerViewChanges(true);
+    const timeout = setTimeout(() => {
+      setTrackMarkerViewChanges(false);
+    }, 220);
 
-    mapRef.current.animateToRegion(initialRegion, 600);
-  }, [focusedActivity?.bookingType, focusedPin, initialRegion]);
+    return () => {
+      clearTimeout(timeout);
+    };
+  }, [pins, selectedPinId]);
+
+  useEffect(() => {
+    return () => {
+      if (markerPressTimeoutRef.current) {
+        clearTimeout(markerPressTimeoutRef.current);
+      }
+    };
+  }, []);
 
   return (
     <View style={styles.container}>
       <MapView
         ref={mapRef}
-        key={mapKey}
         style={StyleSheet.absoluteFillObject}
         initialRegion={initialRegion}
         mapType="standard"
@@ -302,7 +352,32 @@ export function TripMap({
         scrollEnabled={true}
         rotateEnabled={true}
         pitchEnabled={true}
+        onPress={(event) => {
+          if (markerPressInProgressRef.current) {
+            return;
+          }
+          const action = (event.nativeEvent as { action?: string }).action;
+          if (action === 'marker-press') {
+            return;
+          }
+          onMapPress();
+        }}
       >
+        {focusedFlightSegments.map((segment) => (
+          <Polyline
+            key={segment.id}
+            coordinates={[
+              { latitude: segment.fromLatitude, longitude: segment.fromLongitude },
+              { latitude: segment.toLatitude, longitude: segment.toLongitude },
+            ]}
+            strokeColor={colors.flight}
+            strokeWidth={2}
+            lineDashPattern={[8, 6]}
+            geodesic={true}
+            zIndex={90}
+          />
+        ))}
+
         {pins.map((pin) => {
           const isSelected = pin.id === selectedPinId;
           const kind = getPinKind(pin);
@@ -313,13 +388,24 @@ export function TripMap({
           return (
             <Marker
               key={pin.id}
+              identifier={pin.id}
               coordinate={{ latitude: pin.latitude, longitude: pin.longitude }}
-              onPress={() => onPinPress(pin)}
-              tracksViewChanges={false}
+              onPress={() => {
+                markerPressInProgressRef.current = true;
+                if (markerPressTimeoutRef.current) {
+                  clearTimeout(markerPressTimeoutRef.current);
+                }
+                markerPressTimeoutRef.current = setTimeout(() => {
+                  markerPressInProgressRef.current = false;
+                }, 180);
+                onPinPress(pin);
+              }}
+              tracksViewChanges={trackMarkerViewChanges}
               anchor={{ x: 0.5, y: 1 }}
               zIndex={isSelected ? 2000 : 100}
             >
               <View
+                collapsable={false}
                 style={[
                   styles.pinOuter,
                   isSelected ? styles.pinOuterSelected : undefined,

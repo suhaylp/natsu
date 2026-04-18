@@ -1,11 +1,26 @@
 import express from 'express';
 import flightsHandler from '../api/flights';
+import itineraryHandler from '../api/itinerary';
 
 const app = express();
 const port = Number(process.env.PORT ?? 3001);
 const host = '0.0.0.0';
 
 app.use('/api/flights', (req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, x-api-key, Authorization');
+  res.setHeader('Access-Control-Max-Age', '86400');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).end();
+    return;
+  }
+
+  next();
+});
+
+app.use('/api/itinerary', (req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept, x-api-key, Authorization');
@@ -28,6 +43,9 @@ app.get('/health', (_req, res) => {
       notionFlightsDbId: Boolean(process.env.NOTION_FLIGHTS_DB_ID),
       notionHotelsDbId: Boolean(process.env.NOTION_HOTELS_DB_ID),
       notionIdeasDbId: Boolean(process.env.NOTION_IDEAS_DB_ID),
+      notionItineraryDbId: Boolean(process.env.NOTION_ITINERARY_DB_ID),
+      notionTripIdeasDbId: Boolean(process.env.NOTION_TRIP_IDEAS_DB_ID),
+      notionItineraryScheduleDbId: Boolean(process.env.NOTION_ITINERARY_SCHEDULE_DB_ID),
       flightsSyncApiKey: Boolean(process.env.FLIGHTS_SYNC_API_KEY),
       notionDefaultTripId: Boolean(process.env.NOTION_DEFAULT_TRIP_ID),
       notionDefaultTripTitle: Boolean(process.env.NOTION_DEFAULT_TRIP_TITLE),
@@ -43,7 +61,21 @@ app.get('/api/flights', async (req, res) => {
   await flightsHandler(req, res);
 });
 
+app.get('/api/itinerary', async (req, res) => {
+  await itineraryHandler(req, res);
+});
+
 app.all('/api/flights', (req, res) => {
+  res.setHeader('Allow', 'GET');
+  res.status(405).json({
+    error: {
+      code: 'method_not_allowed',
+      message: `Method ${req.method} is not allowed. Use GET.`,
+    },
+  });
+});
+
+app.all('/api/itinerary', (req, res) => {
   res.setHeader('Allow', 'GET');
   res.status(405).json({
     error: {

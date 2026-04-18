@@ -1078,9 +1078,10 @@ export function mapNotionFlightPagesToTrips(pages: NotionPage[]): Trip[] {
 export async function fetchNotionFlightPages(params: {
   notionToken: string;
   databaseId: string;
+  sorts?: Array<{ property: string; direction: 'ascending' | 'descending' }>;
   fetchImpl?: typeof fetch;
 }): Promise<NotionPage[]> {
-  const { notionToken, databaseId, fetchImpl = fetch } = params;
+  const { notionToken, databaseId, sorts, fetchImpl = fetch } = params;
   const pages: NotionPage[] = [];
   let cursor: string | undefined;
 
@@ -1094,6 +1095,7 @@ export async function fetchNotionFlightPages(params: {
       },
       body: JSON.stringify({
         page_size: 100,
+        ...(sorts && sorts.length > 0 ? { sorts } : {}),
         ...(cursor ? { start_cursor: cursor } : {}),
       }),
     });
