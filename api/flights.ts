@@ -135,6 +135,14 @@ function canonicalTripTitle(title: string): string {
     return 'south east asia';
   }
 
+  if (normalized.includes('montreal') && normalized.includes('ottawa')) {
+    return 'montreal ottawa';
+  }
+
+  if (normalized === 'montreal' || normalized.startsWith('montreal ')) {
+    return 'montreal ottawa';
+  }
+
   return normalized;
 }
 

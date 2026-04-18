@@ -134,8 +134,6 @@ export function TripsScreen({ navigation }: Props) {
   }, [lastSyncedAt]);
 
   const renderTripCard = (trip: Trip, key: string) => {
-    const confirmedCount = trip.bookings.filter((booking) => booking.status === 'booked').length;
-    const toBookCount = trip.bookings.filter((booking) => booking.status === 'not_booked').length;
     const photos = getTripPhotos(trip);
     const hasPhotos = photos.length > 0;
     const activePhotoIndex = photoIndexByTrip[trip.id] ?? 0;
@@ -249,41 +247,6 @@ export function TripsScreen({ navigation }: Props) {
                 >
                   {trip.dateRange}
                 </Text>
-
-                <View
-                  style={{
-                    flexDirection: 'row',
-                    alignItems: 'center',
-                    marginTop: theme.spacing.sm,
-                  }}
-                >
-                  <View
-                    style={{
-                      backgroundColor: theme.colors.accentLight,
-                      borderRadius: theme.radii.pill,
-                      paddingHorizontal: theme.spacing.md,
-                      paddingVertical: theme.spacing.xs,
-                      marginRight: theme.spacing.sm,
-                    }}
-                  >
-                    <Text style={{ ...theme.typography.caption, color: theme.colors.accent }}>{`${confirmedCount} confirmed`}</Text>
-                  </View>
-
-                  {toBookCount > 0 ? (
-                    <View
-                      style={{
-                        backgroundColor: theme.colors.stub,
-                        borderRadius: theme.radii.pill,
-                        paddingHorizontal: theme.spacing.md,
-                        paddingVertical: theme.spacing.xs,
-                      }}
-                    >
-                      <Text style={{ ...theme.typography.caption, color: theme.colors.textMuted }}>
-                        {`${toBookCount} to book`}
-                      </Text>
-                    </View>
-                  ) : null}
-                </View>
               </View>
 
               <Text style={{ color: theme.colors.accent, fontSize: 24 }}>→</Text>
