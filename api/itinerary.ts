@@ -604,13 +604,22 @@ export async function itineraryHandler(req: ApiRequest, res: ApiResponse): Promi
   );
   const flightsSyncApiKey = process.env.FLIGHTS_SYNC_API_KEY;
 
-  if (!notionToken || !flightsSyncApiKey || !notionTripIdeasDbId || !notionScheduleDbId) {
-    sendError(
-      res,
-      500,
-      'misconfigured',
-      'Missing required server env vars: NOTION_TOKEN, NOTION_TRIP_IDEAS_DB_ID, NOTION_ITINERARY_SCHEDULE_DB_ID, FLIGHTS_SYNC_API_KEY'
-    );
+  const missingConfig: string[] = [];
+  if (!notionToken) {
+    missingConfig.push('NOTION_TOKEN');
+  }
+  if (!flightsSyncApiKey) {
+    missingConfig.push('FLIGHTS_SYNC_API_KEY');
+  }
+  if (!notionTripIdeasDbId) {
+    missingConfig.push('NOTION_TRIP_IDEAS_DB_ID');
+  }
+  if (!notionScheduleDbId) {
+    missingConfig.push('NOTION_ITINERARY_SCHEDULE_DB_ID');
+  }
+
+  if (missingConfig.length > 0) {
+    sendError(res, 500, 'misconfigured', `Missing required server config: ${missingConfig.join(', ')}`);
     return;
   }
 
