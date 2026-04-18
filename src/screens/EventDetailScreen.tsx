@@ -73,10 +73,10 @@ export function EventDetailScreen({ navigation, route }: Props) {
   const title = isBookingEvent ? booking.label : route.params.title ?? 'Event details';
   const status = isBookingEvent
     ? booking.status === 'booked'
-      ? 'Confirmed'
+      ? 'Booked'
       : 'Not booked yet'
     : route.params.confirmed
-      ? 'Confirmed'
+      ? 'Booked'
       : 'Planned';
   const dateTimeLabel = isBookingEvent
     ? [booking.activityDate, booking.activityTime].filter(Boolean).join(' · ') || 'TBD'

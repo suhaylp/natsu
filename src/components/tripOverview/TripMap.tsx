@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import MapView, { Marker, Polyline } from 'react-native-maps';
-import type { BookingType } from '../../data/trips';
+import MapView, { Marker } from 'react-native-maps';
+import Svg, { Path } from 'react-native-svg';
 import type { MapPin, RouteSegment, StopActivity } from './types';
 
 type TripMapProps = {
@@ -13,11 +13,16 @@ type TripMapProps = {
   onPinPress: (pin: MapPin) => void;
 };
 
+type PinCategory = 'flight' | 'hotel' | 'sightseeing' | 'activities' | 'food';
+type PinStyleKind = 'teardrop' | 'code' | 'cluster';
+
 const colors = {
   mapBg: '#e8f0e9',
-  dark: '#2b6a4a',
-  medium: '#8ebaa4',
-  hotel: '#1f5d44',
+  flight: '#534AB7',
+  hotel: '#185FA5',
+  sightseeing: '#EA4335',
+  activities: '#FB8C00',
+  food: '#34A853',
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -67,6 +72,18 @@ function getWrappedLongitudeCenterAndSpan(longitudes: number[]): { center: numbe
   };
 }
 
+function isActivityLike(activity: StopActivity): boolean {
+  if (activity.bookingType !== 'event') {
+    return false;
+  }
+
+  const haystack = [activity.name, activity.addressLabel, activity.refLabel]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return /activit|adventure|class|tour|hike|workshop/.test(haystack);
+}
+
 function getInitialRegion(pins: MapPin[]) {
   if (pins.length === 0) {
     return {
@@ -102,9 +119,111 @@ function getInitialRegion(pins: MapPin[]) {
   };
 }
 
+function hexToRgba(hex: string, alpha: number): string {
+  const sanitized = hex.replace('#', '');
+  const value = Number.parseInt(sanitized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+function getPinCategory(pin: MapPin): PinCategory {
+  const hasFlight = pin.activities.some((activity) => activity.bookingType === 'flight');
+  if (hasFlight) {
+    return 'flight';
+  }
+
+  const hasHotel = pin.activities.some((activity) => activity.bookingType === 'hotel');
+  if (hasHotel) {
+    return 'hotel';
+  }
+  const hasFood = pin.activities.some((activity) => activity.bookingType === 'food-tour');
+  if (hasFood) {
+    return 'food';
+  }
+  const hasActivities = pin.activities.some(
+    (activity) => activity.bookingType === 'concert' || activity.bookingType === 'festival' || isActivityLike(activity)
+  );
+  if (hasActivities) {
+    return 'activities';
+  }
+  return 'sightseeing';
+}
+
+function getCategoryColor(category: PinCategory): string {
+  if (category === 'flight') {
+    return colors.flight;
+  }
+  if (category === 'hotel') {
+    return colors.hotel;
+  }
+  if (category === 'food') {
+    return colors.food;
+  }
+  if (category === 'activities') {
+    return colors.activities;
+  }
+  return colors.sightseeing;
+}
+
+function getPinKind(pin: MapPin): PinStyleKind {
+  const category = getPinCategory(pin);
+  if (pin.variant === 'cluster' || (pin.count ?? 0) > 1) {
+    return 'cluster';
+  }
+  if (category !== 'flight' && pin.iataCode && pin.iataCode.length <= 4) {
+    return 'code';
+  }
+  return 'teardrop';
+}
+
+function PinGlyph({ category }: { category: PinCategory }) {
+  const fill = getCategoryColor(category);
+
+  if (category === 'flight') {
+    return (
+      <Svg width={10} height={10} viewBox="0 0 24 24" fill="none">
+        <Path d="M2.5 13.2L9.7 12.1L20.8 17.8L21.7 16.1L14.7 11.8L18.4 11.2C19.7 11 20.8 9.9 20.8 8.6C20.8 7.1 19.4 5.9 17.9 6.2L14.3 6.8L10.7 3.2L9.2 4.4L11.8 7.4L4.2 8.6L2.1 6.8L1 8.1L2.6 10L1 11.7L2.2 13L4 11.3L11.4 10.1L7.9 10.7L1.8 12.4L2.5 13.2Z" fill={fill} />
+      </Svg>
+    );
+  }
+
+  if (category === 'hotel') {
+    return (
+      <Svg width={9} height={9} viewBox="0 0 24 24" fill="none">
+        <Path d="M4 20V10L12 4L20 10V20H15V14H9V20H4Z" fill={fill} />
+      </Svg>
+    );
+  }
+
+  if (category === 'activities') {
+    return (
+      <Svg width={9} height={9} viewBox="0 0 24 24" fill="none">
+        <Path d="M12 3L14 8H19L15 11L16.5 16L12 13L7.5 16L9 11L5 8H10L12 3Z" fill={fill} />
+      </Svg>
+    );
+  }
+
+  if (category === 'food') {
+    return (
+      <Svg width={9} height={9} viewBox="0 0 24 24" fill="none">
+        <Path d="M6 4V11C6 12 6.8 12.8 7.8 12.8V20H9.8V12.8C10.8 12.8 11.6 12 11.6 11V4H10V10H9V4H7.8V10H6.8V4H6Z" fill={fill} />
+        <Path d="M15.2 4C17.3 4 19 5.7 19 7.8V20H17V14.5H15.2V4Z" fill={fill} />
+      </Svg>
+    );
+  }
+
+  return (
+    <Svg width={9} height={9} viewBox="0 0 24 24" fill="none">
+      <Path d="M12 3L14.9 9.1L21.6 9.8L16.7 14.3L18.1 21L12 17.6L5.9 21L7.3 14.3L2.4 9.8L9.1 9.1L12 3Z" fill={fill} />
+    </Svg>
+  );
+}
+
 export function TripMap({
   pins,
-  routeSegments,
+  routeSegments: _routeSegments,
   selectedPinId,
   focusedPin,
   focusedActivity,
@@ -184,62 +303,51 @@ export function TripMap({
         rotateEnabled={true}
         pitchEnabled={true}
       >
-        {routeSegments.map((segment) => (
-          <Polyline
-            key={segment.id}
-            coordinates={[
-              { latitude: segment.fromLatitude, longitude: segment.fromLongitude },
-              { latitude: segment.toLatitude, longitude: segment.toLongitude },
-            ]}
-            geodesic={true}
-            strokeWidth={2}
-            strokeColor="rgba(30,61,47,0.56)"
-          />
-        ))}
-
         {pins.map((pin) => {
           const isSelected = pin.id === selectedPinId;
-          const hasFlight = pin.activities.some((activity) => activity.bookingType === 'flight');
-          const hasHotel = pin.activities.some((activity) => activity.bookingType === 'hotel');
-          const hasHotelWithoutFlight = hasHotel && !hasFlight;
-          const hasOnlyFlight = hasFlight && pin.activities.every((activity) => activity.bookingType === 'flight');
-          const firstType = pin.activities[0]?.bookingType;
-          const icon = hasFlight ? '✈' : hasHotelWithoutFlight ? '⌂' : getIconForType(firstType);
-          const fill = hasFlight
-            ? colors.dark
-            : hasHotelWithoutFlight
-              ? colors.hotel
-              : pin.status === 'booked'
-                ? colors.dark
-                : colors.medium;
-          const isIdea = !hasFlight && !hasHotel;
-          const iconColor = isIdea && pin.status !== 'booked' ? '#1e3d2f' : '#ffffff';
+          const kind = getPinKind(pin);
+          const category = getPinCategory(pin);
+          const fill = getCategoryColor(category);
+          const haloColor = hexToRgba(fill, kind === 'cluster' ? 0.1 : 0.15);
 
           return (
             <Marker
               key={pin.id}
               coordinate={{ latitude: pin.latitude, longitude: pin.longitude }}
               onPress={() => onPinPress(pin)}
+              tracksViewChanges={false}
+              anchor={{ x: 0.5, y: 1 }}
+              zIndex={isSelected ? 2000 : 100}
             >
               <View
                 style={[
-                  styles.customPin,
-                  { backgroundColor: fill },
-                  hasOnlyFlight ? styles.customPinFlight : undefined,
-                  hasHotelWithoutFlight ? styles.customPinHotel : undefined,
-                  isSelected ? styles.customPinSelected : undefined,
+                  styles.pinOuter,
+                  isSelected ? styles.pinOuterSelected : undefined,
                 ]}
               >
-                <Text
-                  style={[
-                    styles.customPinText,
-                    hasOnlyFlight ? styles.customPinFlightText : undefined,
-                    hasHotelWithoutFlight ? styles.customPinHotelText : undefined,
-                    { color: iconColor },
-                  ]}
-                >
-                  {icon}
-                </Text>
+                {isSelected ? <View style={[styles.pinHalo, { backgroundColor: haloColor }]} /> : null}
+
+                {kind === 'cluster' ? (
+                  <View style={[styles.clusterBubble, { backgroundColor: fill }]}>
+                    <Text style={styles.clusterCountText}>{String(pin.count ?? pin.activities.length)}</Text>
+                  </View>
+                ) : kind === 'code' ? (
+                  <>
+                    <View style={[styles.codeHead, { backgroundColor: fill }]}>
+                      <Text style={styles.codeText}>{pin.iataCode ?? '---'}</Text>
+                    </View>
+                    <View style={[styles.codeTip, { borderTopColor: fill }]} />
+                  </>
+                ) : (
+                  <>
+                    <View style={[styles.pinBubble, { backgroundColor: fill }]}>
+                      <View style={[styles.pinInnerCircle, isSelected ? styles.pinInnerCircleSelected : undefined]}>
+                        <PinGlyph category={category} />
+                      </View>
+                    </View>
+                    <View style={[styles.pinTip, { borderTopColor: fill }]} />
+                  </>
+                )}
               </View>
             </Marker>
           );
@@ -249,59 +357,94 @@ export function TripMap({
   );
 }
 
-function getIconForType(type: BookingType | undefined): string {
-  if (type === 'flight') {
-    return '✈';
-  }
-
-  if (type === 'hotel') {
-    return '⌂';
-  }
-
-  return '✦';
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     position: 'relative',
     backgroundColor: colors.mapBg,
   },
-  customPin: {
-    minWidth: 19,
-    height: 19,
-    borderRadius: 9.5,
+  pinOuter: {
+    width: 24,
+    height: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 1.25,
-    borderColor: '#ffffff',
-    paddingHorizontal: 3,
+    overflow: 'visible',
   },
-  customPinHotel: {
-    minWidth: 17,
-    height: 17,
-    borderRadius: 8.5,
+  pinOuterSelected: {
+    transform: [{ scale: 1 }],
   },
-  customPinFlight: {
-    minWidth: 15,
-    height: 15,
-    borderRadius: 7.5,
-    paddingHorizontal: 2,
+  pinHalo: {
+    position: 'absolute',
+    top: 0,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
   },
-  customPinSelected: {
-    borderColor: '#0f5a3a',
-    borderWidth: 1.75,
-    transform: [{ scale: 1.03 }],
+  pinBubble: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  customPinText: {
-    fontSize: 9.5,
-    fontWeight: '700',
+  pinInnerCircle: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#ffffff',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  customPinFlightText: {
-    fontSize: 7.5,
+  pinInnerCircleSelected: {
+    width: 12,
+    height: 12,
+    borderRadius: 6,
   },
-  customPinHotelText: {
+  pinTip: {
+    marginTop: -1,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 6,
+    borderRightWidth: 6,
+    borderTopWidth: 10,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+    transform: [{ translateY: -1.5 }],
+  },
+  codeHead: {
+    minWidth: 26,
+    height: 18,
+    borderRadius: 8,
+    paddingHorizontal: 5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  codeText: {
+    color: '#ffffff',
     fontSize: 10,
-    fontWeight: '800',
+    fontWeight: '500',
+    letterSpacing: 0.2,
+  },
+  codeTip: {
+    marginTop: -1,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 8,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
+  },
+  clusterBubble: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  clusterCountText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '500',
   },
 });

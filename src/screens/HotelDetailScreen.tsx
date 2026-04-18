@@ -141,7 +141,7 @@ export function HotelDetailScreen({ navigation, route }: Props) {
                   marginBottom: theme.spacing.lg,
                 }}
               >
-                {booking.status === 'booked' ? 'Confirmed stay' : 'Planned stay'}
+                {booking.status === 'booked' ? 'Booked stay' : 'Planned stay'}
               </Text>
 
               <InfoRow label="Check-in" value={whenLabel} />

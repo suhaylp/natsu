@@ -11,16 +11,41 @@ const colors = {
   muted: '#98b7a7',
   border: 'rgba(164, 194, 177, 0.28)',
   rowBg: 'rgba(11, 32, 24, 0.42)',
-  confirmed: '#58b084',
+  booked: '#58b084',
   idea: '#81b39a',
 };
 
+function withCurrencyLabel(value?: string): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+
+  const normalized = value.trim();
+  const upper = normalized.toUpperCase();
+  if (/(USD|CAD|EUR|GBP|JPY|THB|VND|SGD)/.test(upper)) {
+    return normalized;
+  }
+  if (normalized.includes('$')) {
+    return `USD ${normalized}`;
+  }
+  if (normalized.includes('€')) {
+    return `EUR ${normalized}`;
+  }
+  if (normalized.includes('£')) {
+    return `GBP ${normalized}`;
+  }
+  if (normalized.includes('¥')) {
+    return `JPY ${normalized}`;
+  }
+  return `${normalized} (currency)`;
+}
+
 export function ActivityListItem({ activity, onPress }: ActivityListItemProps) {
-  const statusLabel = activity.status === 'booked' ? 'confirmed' : 'idea';
+  const statusLabel = activity.status === 'booked' ? 'booked' : 'idea';
   const metaParts = [
     activity.dateLabel,
     activity.timeLabel,
-    activity.priceLabel,
+    withCurrencyLabel(activity.priceLabel),
     activity.refLabel ? `Ref ${activity.refLabel}` : undefined,
   ].filter(Boolean);
 
@@ -42,7 +67,7 @@ export function ActivityListItem({ activity, onPress }: ActivityListItemProps) {
       <View
         style={[
           styles.badge,
-          { backgroundColor: activity.status === 'booked' ? colors.confirmed : colors.idea },
+          { backgroundColor: activity.status === 'booked' ? colors.booked : colors.idea },
         ]}
       >
         <Text style={styles.badgeText}>{statusLabel}</Text>

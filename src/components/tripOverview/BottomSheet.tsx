@@ -16,7 +16,7 @@ const colors = {
   sheet: '#f3f9f5',
   text: '#1f4735',
   muted: '#5e7c6d',
-  badgeConfirmed: '#77ba97',
+  badgeBooked: '#77ba97',
   badgeIdea: '#b8dcc8',
   outline: '#c6ddd0',
   chipBg: '#e4f0e9',
@@ -126,7 +126,7 @@ export function BottomSheet({
         }}
       >
         {sortedActivities.map((activity) => {
-          const statusLabel = activity.status === 'booked' ? 'confirmed' : 'idea';
+          const statusLabel = activity.status === 'booked' ? 'booked' : 'idea';
           const subtitle = [
             [activity.city, activity.country].filter(Boolean).join(', '),
             [activity.dateLabel, activity.timeLabel].filter(Boolean).join(' '),
@@ -147,7 +147,7 @@ export function BottomSheet({
                 <View
                   style={[
                     styles.statusBadge,
-                    { backgroundColor: activity.status === 'booked' ? colors.badgeConfirmed : colors.badgeIdea },
+                    { backgroundColor: activity.status === 'booked' ? colors.badgeBooked : colors.badgeIdea },
                   ]}
                 >
                   <Text style={styles.statusBadgeText}>{statusLabel}</Text>

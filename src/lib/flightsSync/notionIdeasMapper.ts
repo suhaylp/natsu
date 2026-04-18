@@ -381,6 +381,9 @@ function normalizeBookingStatus(rawStatus: string | undefined, rawCheckbox: bool
 function mapIdeaType(rawType: string | undefined): BookingType {
   const normalized = normalizeIdeaKey(rawType ?? 'event');
 
+  if (normalized.includes('activit')) {
+    return 'concert';
+  }
   if (normalized.includes('concert')) {
     return 'concert';
   }
@@ -603,7 +606,8 @@ function buildTripsFromRows(rows: FlatIdeaRow[]): Trip[] {
     const bookings: Booking[] = tripEntry.rows
       .map((row) => {
         const locationParts = [row.address, row.city, row.country].filter(Boolean);
-        const formattedPrice = row.price !== undefined ? `$${Number(row.price).toFixed(2).replace(/\.00$/, '')}` : undefined;
+        const formattedPrice =
+          row.price !== undefined ? `USD $${Number(row.price).toFixed(2).replace(/\.00$/, '')}` : undefined;
         const notes = [
           row.description,
           formattedPrice ? `Price: ${formattedPrice}` : undefined,

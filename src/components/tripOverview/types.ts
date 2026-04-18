@@ -18,6 +18,8 @@ export type StopActivity = {
   refLabel?: string;
   addressLabel?: string;
   iataCode?: string;
+  fromCode?: string;
+  toCode?: string;
   notionUrl?: string;
   fromLatitude?: number;
   fromLongitude?: number;

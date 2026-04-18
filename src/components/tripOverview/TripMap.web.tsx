@@ -2,7 +2,6 @@ import { useEffect, useMemo, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
-import type { BookingType } from '../../data/trips';
 import type { MapPin, RouteSegment, StopActivity } from './types';
 
 type TripMapProps = {
@@ -14,69 +13,254 @@ type TripMapProps = {
   onPinPress: (pin: MapPin) => void;
 };
 
+type PinCategory = 'flight' | 'hotel' | 'sightseeing' | 'activities' | 'food';
+type PinStyleKind = 'teardrop' | 'code' | 'cluster';
+
 const colors = {
   mapBg: '#e8f0e9',
-  dark: '#2b6a4a',
-  medium: '#8ebaa4',
-  hotel: '#1f5d44',
+  flight: '#534AB7',
+  hotel: '#185FA5',
+  sightseeing: '#EA4335',
+  activities: '#FB8C00',
+  food: '#34A853',
 };
 
-function getIconForType(type: BookingType | undefined): string {
-  if (type === 'flight') {
-    return '✈';
-  }
-
-  if (type === 'hotel') {
-    return '⌂';
-  }
-
-  return '✦';
+function hexToRgba(hex: string, alpha: number): string {
+  const sanitized = hex.replace('#', '');
+  const value = Number.parseInt(sanitized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
-function createPinIcon(pin: MapPin, isSelected: boolean): L.DivIcon {
+function isActivityLike(activity: StopActivity): boolean {
+  if (activity.bookingType !== 'event') {
+    return false;
+  }
+
+  const haystack = [activity.name, activity.addressLabel, activity.refLabel]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  return /activit|adventure|class|tour|hike|workshop/.test(haystack);
+}
+
+function getPinCategory(pin: MapPin): PinCategory {
   const hasFlight = pin.activities.some((activity) => activity.bookingType === 'flight');
+  if (hasFlight) {
+    return 'flight';
+  }
+
   const hasHotel = pin.activities.some((activity) => activity.bookingType === 'hotel');
-  const hasHotelWithoutFlight = hasHotel && !hasFlight;
-  const firstType = pin.activities[0]?.bookingType;
-  const icon = hasFlight ? '✈' : hasHotelWithoutFlight ? '⌂' : getIconForType(firstType);
-  const fill = hasFlight
-    ? colors.dark
-    : hasHotelWithoutFlight
-      ? colors.hotel
-      : pin.status === 'booked'
-        ? colors.dark
-        : colors.medium;
-  const isIdea = !hasFlight && !hasHotel;
-  const textColor = isIdea && pin.status !== 'booked' ? '#1e3d2f' : '#ffffff';
-  const size = hasFlight ? 15 : hasHotelWithoutFlight ? 17 : 19;
-  const borderColor = isSelected ? '#0f5a3a' : '#ffffff';
-  const borderWidth = isSelected ? 1.75 : 1.25;
+  if (hasHotel) {
+    return 'hotel';
+  }
+  const hasFood = pin.activities.some((activity) => activity.bookingType === 'food-tour');
+  if (hasFood) {
+    return 'food';
+  }
+  const hasActivities = pin.activities.some(
+    (activity) => activity.bookingType === 'concert' || activity.bookingType === 'festival' || isActivityLike(activity)
+  );
+  if (hasActivities) {
+    return 'activities';
+  }
+  return 'sightseeing';
+}
+
+function getCategoryColor(category: PinCategory): string {
+  if (category === 'flight') {
+    return colors.flight;
+  }
+  if (category === 'hotel') {
+    return colors.hotel;
+  }
+  if (category === 'food') {
+    return colors.food;
+  }
+  if (category === 'activities') {
+    return colors.activities;
+  }
+  return colors.sightseeing;
+}
+
+function getPinKind(pin: MapPin): PinStyleKind {
+  const category = getPinCategory(pin);
+  if (pin.variant === 'cluster' || (pin.count ?? 0) > 1) {
+    return 'cluster';
+  }
+  if (category !== 'flight' && pin.iataCode && pin.iataCode.length <= 4) {
+    return 'code';
+  }
+  return 'teardrop';
+}
+
+function glyphSvg(category: PinCategory): string {
+  const fill = getCategoryColor(category);
+
+  if (category === 'flight') {
+    return `<svg width="10" height="10" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M2.5 13.2L9.7 12.1L20.8 17.8L21.7 16.1L14.7 11.8L18.4 11.2C19.7 11 20.8 9.9 20.8 8.6C20.8 7.1 19.4 5.9 17.9 6.2L14.3 6.8L10.7 3.2L9.2 4.4L11.8 7.4L4.2 8.6L2.1 6.8L1 8.1L2.6 10L1 11.7L2.2 13L4 11.3L11.4 10.1L7.9 10.7L1.8 12.4L2.5 13.2Z" fill="${fill}"/></svg>`;
+  }
+
+  if (category === 'hotel') {
+    return `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20V10L12 4L20 10V20H15V14H9V20H4Z" fill="${fill}"/></svg>`;
+  }
+
+  if (category === 'activities') {
+    return `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3L14 8H19L15 11L16.5 16L12 13L7.5 16L9 11L5 8H10L12 3Z" fill="${fill}"/></svg>`;
+  }
+
+  if (category === 'food') {
+    return `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 4V11C6 12 6.8 12.8 7.8 12.8V20H9.8V12.8C10.8 12.8 11.6 12 11.6 11V4H10V10H9V4H7.8V10H6.8V4H6Z" fill="${fill}"/><path d="M15.2 4C17.3 4 19 5.7 19 7.8V20H17V14.5H15.2V4Z" fill="${fill}"/></svg>`;
+  }
+
+  return `<svg width="9" height="9" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3L14.9 9.1L21.6 9.8L16.7 14.3L18.1 21L12 17.6L5.9 21L7.3 14.3L2.4 9.8L9.1 9.1L12 3Z" fill="${fill}"/></svg>`;
+}
+
+function createPinIcon(pin: MapPin, options: { isSelected: boolean }): L.DivIcon {
+  const category = getPinCategory(pin);
+  const fill = getCategoryColor(category);
+  const kind = getPinKind(pin);
+  const haloAlpha = kind === 'cluster' ? 0.1 : 0.15;
+  const haloColor = hexToRgba(fill, haloAlpha);
+  const wrapperOpacity = 1;
+  const scale = options.isSelected ? 1.45 : 1;
+
+  if (kind === 'cluster') {
+    return L.divIcon({
+      className: '',
+      iconSize: [24, 34],
+      iconAnchor: [12, 30],
+      html: `<div style="
+        width:24px;
+        height:34px;
+        position:relative;
+        display:flex;
+        align-items:flex-start;
+        justify-content:center;
+        transform:scale(${scale});
+        transform-origin:center bottom;
+        opacity:${wrapperOpacity};
+      ">
+        ${options.isSelected ? `<div style="position:absolute;top:0;width:30px;height:30px;border-radius:15px;background:${haloColor};"></div>` : ''}
+        <div style="
+          width:24px;
+          height:24px;
+          border-radius:12px;
+          background:${fill};
+          color:#fff;
+          font-size:13px;
+          font-weight:500;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          line-height:1;
+        ">${String(pin.count ?? pin.activities.length)}</div>
+      </div>`,
+    });
+  }
+
+  if (kind === 'code') {
+    const code = (pin.iataCode ?? '---').slice(0, 4);
+    const width = Math.max(30, code.length * 10 + 10);
+    return L.divIcon({
+      className: '',
+      iconSize: [Math.max(26, width), 34],
+      iconAnchor: [Math.max(13, width / 2), 30],
+      html: `<div style="
+        width:${Math.max(26, width)}px;
+        height:34px;
+        position:relative;
+        display:flex;
+        flex-direction:column;
+        align-items:center;
+        justify-content:flex-start;
+        transform:scale(${scale});
+        transform-origin:center bottom;
+        opacity:${wrapperOpacity};
+      ">
+        ${options.isSelected ? `<div style="position:absolute;top:0;width:30px;height:30px;border-radius:15px;background:${haloColor};"></div>` : ''}
+        <div style="
+          min-width:${width}px;
+          height:18px;
+          padding:0 5px;
+          border-radius:8px;
+          background:${fill};
+          color:#fff;
+          font-size:10px;
+          font-weight:500;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          line-height:1;
+          letter-spacing:0.2px;
+          box-sizing:border-box;
+        ">${code}</div>
+        <div style="
+          margin-top:-1px;
+          width:0;
+          height:0;
+          border-left:5px solid transparent;
+          border-right:5px solid transparent;
+          border-top:8px solid ${fill};
+        "></div>
+      </div>`,
+    });
+  }
 
   return L.divIcon({
     className: '',
-    iconSize: [size, size],
-    iconAnchor: [size / 2, size / 2],
+    iconSize: [24, 34],
+    iconAnchor: [12, 30],
     html: `<div style="
-      width:${size}px;
-      height:${size}px;
-      border-radius:${size / 2}px;
-      background:${fill};
-      border:${borderWidth}px solid ${borderColor};
+      width:24px;
+      height:34px;
+      position:relative;
       display:flex;
+      flex-direction:column;
       align-items:center;
-      justify-content:center;
-      font-size:${hasFlight ? 7.5 : 9.5}px;
-      font-weight:700;
-      color:${textColor};
-      box-sizing:border-box;
-      line-height:1;
-    ">${icon}</div>`,
+      justify-content:flex-start;
+      transform:scale(${scale});
+      transform-origin:center bottom;
+      opacity:${wrapperOpacity};
+    ">
+      ${options.isSelected ? `<div style="position:absolute;top:0;width:30px;height:30px;border-radius:15px;background:${haloColor};"></div>` : ''}
+      <div style="
+        width:24px;
+        height:24px;
+        border-radius:12px;
+        background:${fill};
+        display:flex;
+        align-items:center;
+        justify-content:center;
+      ">
+        <div style="
+          width:10px;
+          height:10px;
+          border-radius:5px;
+          background:#fff;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+        ">${glyphSvg(category)}</div>
+      </div>
+      <div style="
+        margin-top:-1px;
+        width:0;
+        height:0;
+        border-left:6px solid transparent;
+        border-right:6px solid transparent;
+        border-top:10px solid ${fill};
+        transform:translateY(-1.5px);
+      "></div>
+    </div>`,
   });
 }
 
 export function TripMap({
   pins,
-  routeSegments,
+  routeSegments: _routeSegments,
   selectedPinId,
   focusedPin,
   focusedActivity,
@@ -85,7 +269,6 @@ export function TripMap({
   const containerRef = useRef<HTMLElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersLayerRef = useRef<L.LayerGroup | null>(null);
-  const routesLayerRef = useRef<L.LayerGroup | null>(null);
 
   const focusedFlightSegment = useMemo(() => {
     if (
@@ -127,46 +310,41 @@ export function TripMap({
     }).addTo(map);
 
     markersLayerRef.current = L.layerGroup().addTo(map);
-    routesLayerRef.current = L.layerGroup().addTo(map);
     mapRef.current = map;
 
     return () => {
       map.remove();
       mapRef.current = null;
       markersLayerRef.current = null;
-      routesLayerRef.current = null;
     };
   }, []);
 
   useEffect(() => {
     const map = mapRef.current;
     const markersLayer = markersLayerRef.current;
-    const routesLayer = routesLayerRef.current;
 
-    if (!map || !markersLayer || !routesLayer) {
+    if (!map || !markersLayer) {
       return;
     }
 
     markersLayer.clearLayers();
-    routesLayer.clearLayers();
 
-    routeSegments.forEach((segment) => {
-      L.polyline(
-        [
-          [segment.fromLatitude, segment.fromLongitude],
-          [segment.toLatitude, segment.toLongitude],
-        ],
-        {
-          color: 'rgba(30,61,47,0.56)',
-          weight: 2,
-        }
-      ).addTo(routesLayer);
+    const renderOrder = [...pins].sort((a, b) => {
+      if (a.id === selectedPinId) {
+        return 1;
+      }
+      if (b.id === selectedPinId) {
+        return -1;
+      }
+      return 0;
     });
 
-    pins.forEach((pin) => {
+    renderOrder.forEach((pin) => {
+      const isSelected = pin.id === selectedPinId;
       const marker = L.marker([pin.latitude, pin.longitude], {
-        icon: createPinIcon(pin, pin.id === selectedPinId),
+        icon: createPinIcon(pin, { isSelected }),
         keyboard: false,
+        zIndexOffset: isSelected ? 2000 : 100,
       });
       marker.on('click', () => onPinPress(pin));
       marker.addTo(markersLayer);
@@ -194,13 +372,7 @@ export function TripMap({
       return;
     }
 
-    const allCoordinates = [
-      ...pins.map((pin) => [pin.latitude, pin.longitude] as [number, number]),
-      ...routeSegments.flatMap((segment) => [
-        [segment.fromLatitude, segment.fromLongitude] as [number, number],
-        [segment.toLatitude, segment.toLongitude] as [number, number],
-      ]),
-    ];
+    const allCoordinates = pins.map((pin) => [pin.latitude, pin.longitude] as [number, number]);
 
     if (allCoordinates.length === 1) {
       map.flyTo(allCoordinates[0], 11.5, {
@@ -219,7 +391,7 @@ export function TripMap({
         easeLinearity: 0.25,
       });
     }
-  }, [focusedFlightSegment, focusedPin, onPinPress, pins, routeSegments, selectedPinId]);
+  }, [focusedFlightSegment, focusedPin, onPinPress, pins, selectedPinId]);
 
   return (
     <View style={styles.container}>
