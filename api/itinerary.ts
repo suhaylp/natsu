@@ -660,7 +660,14 @@ export async function itineraryHandler(req: ApiRequest, res: ApiResponse): Promi
     res.status(200).json(payload);
   } catch (error) {
     if (error instanceof NotionFetchError) {
-      sendError(res, 502, 'notion_error', error.message, error.details);
+      const details = error.details ?? '';
+      const isNotionObjectNotFound = /"code":"object_not_found"/i.test(details);
+      const message = isNotionObjectNotFound
+        ? 'Itinerary database not accessible in Notion. Share the database(s) with the integration and retry.'
+        : error.message === 'Failed to fetch flights from Notion'
+          ? 'Failed to fetch itinerary data from Notion'
+          : error.message;
+      sendError(res, 502, 'notion_error', message, error.details);
       return;
     }
 

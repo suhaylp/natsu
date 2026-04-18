@@ -120,6 +120,7 @@ export function TripsScreen({ navigation }: Props) {
 
   const nextTrip = upcomingTrips.find((item) => item.startDate);
   const nextTripCountdown = nextTrip?.startDate ? getDayDiff(today, nextTrip.startDate) : null;
+  const hasTrips = trips.length > 0;
   const lastSyncedLabel = useMemo(() => {
     if (!lastSyncedAt) {
       return null;
@@ -389,7 +390,7 @@ export function TripsScreen({ navigation }: Props) {
                 marginTop: theme.spacing.xs,
               }}
             >
-              {`Sync issue: ${error}`}
+              {hasTrips ? `Live sync issue (showing loaded trips): ${error}` : `Sync issue: ${error}`}
             </Text>
           ) : null}
         </ScrollView>
