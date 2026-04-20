@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Animated, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Animated, Linking, PanResponder, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { BlurView } from 'expo-blur';
@@ -1676,6 +1676,24 @@ function MapTabContent(props: {
   const [selectedPinId, setSelectedPinId] = useState<string | null>(null);
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
+  const [flightLegIndex, setFlightLegIndex] = useState(0);
+  const [flightPagerWidth, setFlightPagerWidth] = useState(0);
+  const sheetTranslate = useRef(new Animated.Value(0)).current;
+  const flightPagerRef = useRef<ScrollView | null>(null);
+  const hasInitializedSelectionRef = useRef(false);
+
+  const sheetSnapOpen = 0;
+  const sheetSnapClosed = 186;
+
+  const animateSheetTo = (nextValue: number) => {
+    Animated.spring(sheetTranslate, {
+      toValue: nextValue,
+      useNativeDriver: true,
+      damping: 24,
+      stiffness: 220,
+      mass: 0.85,
+    }).start();
+  };
 
   const mapData = useMemo(() => buildCombinedMapData(props.trip), [props.trip]);
 
@@ -1704,7 +1722,13 @@ function MapTabContent(props: {
   }, [activeFilter, mapData.pins, mapData.routeSegments]);
 
   useEffect(() => {
-    if (!selectedPinId) {
+    if (props.fullScreen) {
+      return;
+    }
+
+    if (filteredMapData.pins.length === 0) {
+      setSelectedPinId(null);
+      setSelectedActivityId(null);
       return;
     }
 
@@ -1713,7 +1737,31 @@ function MapTabContent(props: {
       setSelectedPinId(null);
       setSelectedActivityId(null);
     }
-  }, [filteredMapData.pins, selectedPinId]);
+  }, [filteredMapData.pins, props.fullScreen, selectedPinId]);
+
+  useEffect(() => {
+    if (!props.fullScreen) {
+      return;
+    }
+
+    if (filteredMapData.pins.length === 0) {
+      setSelectedPinId(null);
+      setSelectedActivityId(null);
+      return;
+    }
+
+    setSelectedPinId((previous) => {
+      if (!previous) {
+        if (!hasInitializedSelectionRef.current) {
+          hasInitializedSelectionRef.current = true;
+          return filteredMapData.pins[0]?.id ?? null;
+        }
+        return previous;
+      }
+
+      return filteredMapData.pins.some((pin) => pin.id === previous) ? previous : filteredMapData.pins[0]?.id ?? null;
+    });
+  }, [filteredMapData.pins, props.fullScreen]);
 
   const selectedPin = useMemo(() => {
     if (!selectedPinId) {
@@ -1737,6 +1785,67 @@ function MapTabContent(props: {
 
     return getDefaultActivityForPin(selectedPin);
   }, [selectedActivityId, selectedPin]);
+
+  useEffect(() => {
+    if (!props.fullScreen) {
+      return;
+    }
+    animateSheetTo(focusedActivity ? sheetSnapOpen : sheetSnapClosed);
+  }, [focusedActivity?.id, props.fullScreen]);
+
+  useEffect(() => {
+    if (!props.fullScreen) {
+      return;
+    }
+    if (!selectedPin || selectedPin.activities.length === 0) {
+      setSelectedActivityId(null);
+      return;
+    }
+
+    setSelectedActivityId((previous) =>
+      previous && selectedPin.activities.some((activity) => activity.id === previous)
+        ? previous
+        : getDefaultActivityForPin(selectedPin)?.id ?? null
+    );
+  }, [props.fullScreen, selectedPin]);
+
+  const swipeActivities = useMemo(
+    () => (focusedActivity ? getSwipeActivities(filteredMapData.pins, getSwipeGroup(focusedActivity)) : []),
+    [filteredMapData.pins, focusedActivity?.id]
+  );
+
+  const activeSwipeIndex = useMemo(() => {
+    if (!focusedActivity || swipeActivities.length === 0) {
+      return 0;
+    }
+    const exact = swipeActivities.findIndex((activity) => activity.id === focusedActivity.id);
+    if (exact >= 0) {
+      return exact;
+    }
+    const normalizedFocused = focusedActivity.id.replace(/-(from|to)$/i, '');
+    const byFlightPair = swipeActivities.findIndex(
+      (activity) => activity.id.replace(/-(from|to)$/i, '') === normalizedFocused
+    );
+    return byFlightPair >= 0 ? byFlightPair : 0;
+  }, [focusedActivity?.id, swipeActivities]);
+
+  useEffect(() => {
+    if (!props.fullScreen) {
+      return;
+    }
+    setFlightLegIndex(activeSwipeIndex);
+  }, [activeSwipeIndex, focusedActivity?.id, props.fullScreen]);
+
+  useEffect(() => {
+    if (!props.fullScreen) {
+      return;
+    }
+    if (flightPagerWidth <= 0 || !flightPagerRef.current) {
+      return;
+    }
+    const targetX = flightLegIndex * flightPagerWidth;
+    flightPagerRef.current.scrollTo({ x: targetX, y: 0, animated: false });
+  }, [flightLegIndex, flightPagerWidth, props.fullScreen, swipeActivities.length]);
 
   const openActivityDetails = (activity: StopActivity) => {
     if (activity.bookingType === 'flight') {
@@ -1773,6 +1882,356 @@ function MapTabContent(props: {
       void Linking.openURL(webUrl).catch(() => {});
     });
   };
+
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponder: (_evt, gestureState) => Math.abs(gestureState.dy) > 8,
+        onPanResponderGrant: () => {},
+        onPanResponderMove: () => {},
+        onPanResponderRelease: () => {
+          animateSheetTo(sheetSnapOpen);
+        },
+      }),
+    [sheetTranslate]
+  );
+
+  if (props.fullScreen) {
+    return (
+      <View style={styles.mapLegacyRoot}>
+        <TripMap
+          pins={filteredMapData.pins}
+          routeSegments={filteredMapData.routeSegments}
+          selectedPinId={selectedPin?.id ?? null}
+          focusedPin={selectedPin}
+          focusedActivity={focusedActivity}
+          onPinPress={(pin) => {
+            setSelectedPinId(pin.id);
+            setSelectedActivityId(getDefaultActivityForPin(pin)?.id ?? null);
+            animateSheetTo(sheetSnapOpen);
+          }}
+          onMapPress={() => {
+            setSelectedPinId(null);
+            setSelectedActivityId(null);
+            animateSheetTo(sheetSnapClosed);
+          }}
+        />
+
+        <SafeAreaView style={styles.mapLegacyFilterOverlay} pointerEvents="box-none">
+          <View style={styles.mapLegacyFilterCard}>
+            <ScrollView
+              horizontal={true}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.mapLegacyFilterRow}
+            >
+              {FILTER_OPTIONS.map((option) => {
+                const isActive = activeFilter === option.key;
+                const tint = getFilterTint(option.key, isActive);
+                return (
+                  <Pressable
+                    key={`legacy-map-filter-${option.key}`}
+                    style={[
+                      styles.mapLegacyFilterChip,
+                      {
+                        backgroundColor: tint.bg,
+                        borderColor: tint.border,
+                      },
+                    ]}
+                    onPress={() => setActiveFilter(option.key)}
+                  >
+                    <Text style={[styles.mapLegacyFilterChipText, { color: tint.text }]}>
+                      {option.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </SafeAreaView>
+
+        <View style={styles.bottomOverlay} pointerEvents="box-none">
+          <Animated.View
+            style={[
+              styles.bottomSheet,
+              {
+                transform: [{ translateY: sheetTranslate }],
+              },
+            ]}
+          >
+            <View {...panResponder.panHandlers}>
+              <View style={styles.bottomSheetHandleWrap}>
+                <View style={styles.bottomSheetHandle} />
+              </View>
+            </View>
+
+            {focusedActivity ? (
+              <View style={styles.sheetContent}>
+                {(() => {
+                  const swipeGroup = getSwipeGroup(focusedActivity);
+                  const pages = swipeActivities.length > 0 ? swipeActivities : [focusedActivity];
+
+                  return (
+                    <View
+                      style={styles.flightPagerWrap}
+                      onLayout={(event) => {
+                        const measuredWidth = Math.round(event.nativeEvent.layout.width);
+                        if (measuredWidth > 0 && measuredWidth !== flightPagerWidth) {
+                          setFlightPagerWidth(measuredWidth);
+                        }
+                      }}
+                    >
+                      <ScrollView
+                        ref={flightPagerRef}
+                        horizontal={true}
+                        pagingEnabled={true}
+                        showsHorizontalScrollIndicator={false}
+                        onMomentumScrollEnd={(event) => {
+                          if (flightPagerWidth <= 0 || pages.length <= 1) {
+                            return;
+                          }
+
+                          const nextIndex = Math.round(event.nativeEvent.contentOffset.x / flightPagerWidth);
+                          const clamped = Math.max(0, Math.min(nextIndex, pages.length - 1));
+                          if (clamped !== flightLegIndex) {
+                            setFlightLegIndex(clamped);
+                          }
+
+                          const nextActivity = pages[clamped];
+                          if (nextActivity) {
+                            setSelectedActivityId(nextActivity.id);
+                            const pinForActivity = filteredMapData.pins.find((pin) =>
+                              pin.activities.some((activity) => activity.id === nextActivity.id)
+                            );
+                            if (pinForActivity && pinForActivity.id !== selectedPinId) {
+                              setSelectedPinId(pinForActivity.id);
+                            }
+                          }
+                        }}
+                      >
+                        {pages.map((pageActivity, pageIndex) => {
+                          const experienceType = getExperienceType(pageActivity);
+                          const isFlight = pageActivity.bookingType === 'flight';
+                          const isHotel = pageActivity.bookingType === 'hotel';
+                          const isSplitFlightBooking =
+                            isFlight &&
+                            pages.length > 1 &&
+                            pages.every(
+                              (candidate) =>
+                                candidate.bookingType === 'flight' && candidate.bookingId === pageActivity.bookingId
+                            );
+                          const headerTagLabel = isFlight
+                            ? isSplitFlightBooking
+                              ? `Flight ${pageIndex + 1}/${pages.length}`
+                              : 'Flight'
+                            : isHotel
+                              ? 'Hotel'
+                              : getExperienceLabel(experienceType);
+                          const headerTagStyle = isFlight
+                            ? styles.headerTypeTagFlight
+                            : isHotel
+                              ? styles.headerTypeTagHotel
+                              : experienceType === 'activities'
+                                ? styles.headerTypeTagActivities
+                                : experienceType === 'food'
+                                  ? styles.headerTypeTagFood
+                                  : styles.headerTypeTagSightseeing;
+                          const headerTagTextStyle = isFlight
+                            ? styles.headerTypeTagTextFlight
+                            : isHotel
+                              ? styles.headerTypeTagTextHotel
+                              : experienceType === 'activities'
+                                ? styles.headerTypeTagTextActivities
+                                : experienceType === 'food'
+                                  ? styles.headerTypeTagTextFood
+                                  : styles.headerTypeTagTextSightseeing;
+                          const hotelBooking = isHotel
+                            ? props.trip.bookings.find((booking) => booking.id === pageActivity.bookingId && booking.type === 'hotel')
+                            : undefined;
+                          const checkOutDate = hotelBooking?.hotelStay?.checkOutDate ?? pageActivity.dateLabel ?? 'TBD';
+                          const checkOutTime = hotelBooking?.hotelStay?.checkOutTime ?? pageActivity.timeLabel;
+                          const flightData = isFlight ? buildFlightLegSheetData(props.trip, pageActivity) : null;
+                          const flightLegs = flightData?.legs ?? [];
+                          const firstFlightLeg = flightLegs[0] ?? null;
+                          const lastFlightLeg = flightLegs[flightLegs.length - 1] ?? firstFlightLeg;
+                          const flightChainLabel = buildFlightChainLabel(flightLegs);
+
+                          return (
+                            <View
+                              key={pageActivity.id}
+                              style={[
+                                styles.flightLegPage,
+                                flightPagerWidth > 0 ? { width: flightPagerWidth } : null,
+                              ]}
+                            >
+                              <View style={styles.sheetHeader}>
+                                <View
+                                  style={[
+                                    styles.headerIconBadge,
+                                    isFlight
+                                      ? styles.headerIconBadgeFlight
+                                      : isHotel
+                                        ? styles.headerIconBadgeHotel
+                                        : experienceType === 'activities'
+                                          ? styles.headerIconBadgeActivities
+                                          : experienceType === 'food'
+                                            ? styles.headerIconBadgeFood
+                                            : styles.headerIconBadgeSightseeing,
+                                  ]}
+                                >
+                                  {isFlight ? (
+                                    <SheetFlightBadgeIcon />
+                                  ) : isHotel ? (
+                                    <SheetHotelBadgeIcon />
+                                  ) : experienceType === 'activities' ? (
+                                    <SheetActivitiesBadgeIcon />
+                                  ) : experienceType === 'food' ? (
+                                    <SheetFoodBadgeIcon />
+                                  ) : (
+                                    <SheetSightseeingBadgeIcon />
+                                  )}
+                                </View>
+
+                                <View style={styles.headerTextBlock}>
+                                  <Text style={styles.headerTitle} numberOfLines={1}>
+                                    {pageActivity.name}
+                                  </Text>
+                                  <Text style={styles.headerSubtitle} numberOfLines={1}>
+                                    {isFlight
+                                      ? `${flightChainLabel} · ${(firstFlightLeg?.depDate ?? pageActivity.dateLabel) || 'TBD'}`
+                                      : isHotel
+                                        ? [pageActivity.city, pageActivity.country].filter(Boolean).join(' · ') || 'Stay details'
+                                        : [pageActivity.city, pageActivity.country].filter(Boolean).join(' · ') || 'Experience details'}
+                                  </Text>
+                                </View>
+
+                                <View style={[styles.headerTypeTag, headerTagStyle]}>
+                                  <Text style={[styles.headerTypeTagText, headerTagTextStyle]}>
+                                    {headerTagLabel}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {isFlight ? (
+                                <View style={styles.sheetBody}>
+                                  <View style={styles.flightRouteRow}>
+                                    <Text style={styles.flightCodeText} numberOfLines={1}>
+                                      {firstFlightLeg?.fromCode ?? pageActivity.fromCode ?? '—'}
+                                    </Text>
+                                    <View style={styles.flightMidWrap}>
+                                      <View style={styles.flightDivider} />
+                                      <SheetPlaneRowIcon />
+                                      <View style={styles.flightDivider} />
+                                    </View>
+                                    <Text style={styles.flightCodeText} numberOfLines={1}>
+                                      {lastFlightLeg?.toCode ?? pageActivity.toCode ?? pageActivity.iataCode ?? '—'}
+                                    </Text>
+                                  </View>
+                                  {flightLegs.length > 1 ? (
+                                    <Text style={styles.flightChainSubLabel} numberOfLines={1}>
+                                      {flightChainLabel}
+                                    </Text>
+                                  ) : null}
+
+                                  <View style={styles.infoGrid}>
+                                    <View style={styles.infoTile}>
+                                      <Text style={styles.tileLabel}>Departs</Text>
+                                      <Text style={styles.tileValue}>{firstFlightLeg?.depTime ?? parseFlightSegments(pageActivity).depTime}</Text>
+                                      <Text style={styles.tileSubLabel}>{firstFlightLeg?.depDate ?? parseFlightSegments(pageActivity).depDate}</Text>
+                                    </View>
+                                    <View style={styles.infoTile}>
+                                      <Text style={styles.tileLabel}>Arrives</Text>
+                                      <Text style={styles.tileValue}>{lastFlightLeg?.arrTime ?? parseFlightSegments(pageActivity).arrTime}</Text>
+                                      <Text style={styles.tileSubLabel}>{lastFlightLeg?.arrDate ?? parseFlightSegments(pageActivity).arrDate}</Text>
+                                    </View>
+                                    <View style={styles.infoTile}>
+                                      <Text style={styles.tileLabel}>Duration</Text>
+                                      <Text style={styles.tileValue}>{flightLegs.length > 1 ? `${flightLegs.length} legs` : firstFlightLeg?.duration ?? 'TBD'}</Text>
+                                      <Text style={styles.tileSubLabel}>{flightLegs.length > 1 ? 'Connected' : 'Direct'}</Text>
+                                    </View>
+                                  </View>
+                                </View>
+                              ) : isHotel ? (
+                                <View style={styles.sheetBody}>
+                                  <View style={styles.infoGridTwo}>
+                                    <View style={styles.infoTile}>
+                                      <Text style={styles.tileLabel}>Check-in</Text>
+                                      <Text style={styles.tileValue}>{toDateAndTimeParts(pageActivity).dateValue}</Text>
+                                      <Text style={styles.tileSubLabel}>
+                                        {toDateAndTimeParts(pageActivity).timeValue
+                                          ? `from ${toDateAndTimeParts(pageActivity).timeValue}`
+                                          : 'from TBD'}
+                                      </Text>
+                                    </View>
+                                    <View style={styles.infoTile}>
+                                      <Text style={styles.tileLabel}>Check-out</Text>
+                                      <Text style={styles.tileValue}>{checkOutDate}</Text>
+                                      <Text style={styles.tileSubLabel}>
+                                        {checkOutTime
+                                          ? `from ${checkOutTime}`
+                                          : 'from TBD'}
+                                      </Text>
+                                    </View>
+                                  </View>
+                                </View>
+                              ) : (
+                                <View style={styles.sheetBody}>
+                                  <View style={styles.infoGridTwo}>
+                                    <View style={styles.infoTile}>
+                                      <Text style={styles.tileLabel}>Type</Text>
+                                      <Text style={styles.tileValue}>{getExperienceLabel(experienceType)}</Text>
+                                      <Text style={styles.tileSubLabel}>
+                                        {[pageActivity.city, pageActivity.country].filter(Boolean).join(', ') || 'Location TBD'}
+                                      </Text>
+                                    </View>
+                                    <View style={styles.infoTile}>
+                                      <Text style={styles.tileLabel}>Price</Text>
+                                      <Text style={styles.tileValue}>{withCurrencyLabel(pageActivity.priceLabel) ?? 'Currency TBD'}</Text>
+                                      <Text style={styles.tileSubLabel}>per person</Text>
+                                    </View>
+                                  </View>
+                                </View>
+                              )}
+
+                              <View style={styles.buttonRow}>
+                                <Pressable style={styles.moreInfoButton} onPress={() => openActivityDetails(pageActivity)}>
+                                  <Text style={styles.moreInfoButtonText}>More info</Text>
+                                </Pressable>
+                                <Pressable
+                                  style={[
+                                    styles.openMapsButton,
+                                    isFlight
+                                      ? styles.openMapsButtonFlight
+                                      : isHotel
+                                        ? styles.openMapsButtonHotel
+                                        : experienceType === 'activities'
+                                          ? styles.openMapsButtonActivities
+                                          : experienceType === 'food'
+                                            ? styles.openMapsButtonFood
+                                            : styles.openMapsButtonSightseeing,
+                                  ]}
+                                  onPress={() => openInMaps(pageActivity)}
+                                >
+                                  <Text style={styles.openMapsButtonText}>Open in Maps</Text>
+                                </Pressable>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </ScrollView>
+                    </View>
+                  );
+                })()}
+              </View>
+            ) : (
+              <View style={styles.bottomSheetEmptyWrap}>
+                <Text style={styles.bottomSheetEmptyText}>Tap a pin to see details.</Text>
+              </View>
+            )}
+          </Animated.View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.mapTabRoot, props.fullScreen ? styles.mapTabRootFullScreen : null]}>
@@ -2098,23 +2557,6 @@ export function TripDetailScreen({ navigation, route }: Props) {
               <Text style={styles.fallbackBackText}>Back</Text>
             </FrostedSurface>
           </Pressable>
-        </SafeAreaView>
-      </View>
-    );
-  }
-
-  if (!tripLoaded && tripLoading) {
-    return (
-      <View style={styles.screenRoot}>
-        <LinearGradient
-          colors={design.backgroundGradient}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={StyleSheet.absoluteFill}
-        />
-        <StatusBar style="dark" />
-        <SafeAreaView style={styles.fallbackCenter}>
-          <Text style={styles.fallbackTitle}>Loading trip details...</Text>
         </SafeAreaView>
       </View>
     );
@@ -2645,6 +3087,293 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '500',
     color: '#e8f5ee',
+  },
+  mapLegacyRoot: {
+    flex: 1,
+    backgroundColor: '#e8f0e9',
+  },
+  mapLegacyFilterOverlay: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    paddingHorizontal: 12,
+    paddingTop: 34,
+  },
+  mapLegacyFilterCard: {
+    backgroundColor: colors.topCard,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: 'rgba(30,61,47,0.18)',
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 6,
+  },
+  mapLegacyFilterRow: {
+    gap: 8,
+    paddingBottom: 2,
+  },
+  mapLegacyFilterChip: {
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderWidth: 1,
+  },
+  mapLegacyFilterChipText: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  bottomOverlay: {
+    position: 'absolute',
+    left: 8,
+    right: 8,
+    bottom: 4,
+  },
+  bottomSheet: {
+    backgroundColor: '#ffffff',
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    borderBottomLeftRadius: 14,
+    borderBottomRightRadius: 14,
+    borderWidth: 0.5,
+    borderColor: 'rgba(12,24,44,0.12)',
+    overflow: 'hidden',
+    paddingBottom: 12,
+  },
+  bottomSheetHandleWrap: {
+    alignItems: 'center',
+    paddingTop: 10,
+    paddingBottom: 10,
+  },
+  bottomSheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: '#D0D5DD',
+  },
+  sheetContent: {
+    paddingHorizontal: 12,
+  },
+  sheetHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 10,
+    paddingBottom: 12,
+    borderBottomWidth: 0.5,
+    borderBottomColor: 'rgba(12,24,44,0.14)',
+  },
+  headerIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerIconBadgeFlight: {
+    backgroundColor: '#EEEDFE',
+  },
+  headerIconBadgeHotel: {
+    backgroundColor: '#E6F1FB',
+  },
+  headerIconBadgeSightseeing: {
+    backgroundColor: '#FDECEC',
+  },
+  headerIconBadgeActivities: {
+    backgroundColor: '#FFF4E8',
+  },
+  headerIconBadgeFood: {
+    backgroundColor: '#ECF9F0',
+  },
+  headerTextBlock: {
+    flex: 1,
+    minWidth: 0,
+    paddingTop: 2,
+  },
+  headerTitle: {
+    color: '#111827',
+    fontSize: 15,
+    fontWeight: '500',
+  },
+  headerSubtitle: {
+    color: '#6B7280',
+    fontSize: 12,
+    fontWeight: '400',
+    marginTop: 2,
+  },
+  headerTypeTag: {
+    borderRadius: 7,
+    paddingVertical: 4,
+    paddingHorizontal: 9,
+    marginTop: 2,
+  },
+  headerTypeTagFlight: {
+    backgroundColor: '#EEEDFE',
+  },
+  headerTypeTagHotel: {
+    backgroundColor: '#E6F1FB',
+  },
+  headerTypeTagSightseeing: {
+    backgroundColor: '#FDECEC',
+  },
+  headerTypeTagActivities: {
+    backgroundColor: '#FFF4E8',
+  },
+  headerTypeTagFood: {
+    backgroundColor: '#ECF9F0',
+  },
+  headerTypeTagText: {
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  headerTypeTagTextFlight: {
+    color: '#3C3489',
+  },
+  headerTypeTagTextHotel: {
+    color: '#0C447C',
+  },
+  headerTypeTagTextSightseeing: {
+    color: '#B42318',
+  },
+  headerTypeTagTextActivities: {
+    color: '#B54708',
+  },
+  headerTypeTagTextFood: {
+    color: '#166534',
+  },
+  sheetBody: {
+    paddingTop: 12,
+  },
+  flightRouteRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+    gap: 8,
+  },
+  flightChainSubLabel: {
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '400',
+    marginTop: -2,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  flightPagerWrap: {
+    marginHorizontal: -2,
+  },
+  flightLegPage: {
+    paddingHorizontal: 2,
+  },
+  flightCodeText: {
+    color: '#111827',
+    fontSize: 22,
+    fontWeight: '500',
+    minWidth: 52,
+    textAlign: 'center',
+  },
+  flightMidWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    gap: 6,
+  },
+  flightDivider: {
+    flex: 1,
+    minWidth: 0,
+    height: 0.5,
+    backgroundColor: 'rgba(17,24,39,0.2)',
+  },
+  infoGrid: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  infoGridTwo: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  infoTile: {
+    flex: 1,
+    minWidth: 0,
+    backgroundColor: '#F7F8FA',
+    borderRadius: 11,
+    padding: 10,
+  },
+  tileLabel: {
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '400',
+  },
+  tileValue: {
+    color: '#111827',
+    fontSize: 15,
+    fontWeight: '500',
+    marginTop: 4,
+  },
+  tileSubLabel: {
+    color: '#6B7280',
+    fontSize: 11,
+    fontWeight: '400',
+    marginTop: 2,
+  },
+  buttonRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 12,
+  },
+  moreInfoButton: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: 11,
+    borderWidth: 0.5,
+    borderColor: 'rgba(17,24,39,0.25)',
+    backgroundColor: '#F7F8FA',
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  moreInfoButtonText: {
+    color: '#344054',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  openMapsButton: {
+    flex: 1,
+    minWidth: 0,
+    borderRadius: 11,
+    paddingVertical: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  openMapsButtonFlight: {
+    backgroundColor: '#534AB7',
+  },
+  openMapsButtonHotel: {
+    backgroundColor: '#185FA5',
+  },
+  openMapsButtonSightseeing: {
+    backgroundColor: '#EA4335',
+  },
+  openMapsButtonActivities: {
+    backgroundColor: '#FB8C00',
+  },
+  openMapsButtonFood: {
+    backgroundColor: '#34A853',
+  },
+  openMapsButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '500',
+  },
+  bottomSheetEmptyWrap: {
+    minHeight: 124,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  bottomSheetEmptyText: {
+    color: '#4d6d5d',
+    fontSize: 13,
+    fontWeight: '600',
   },
   embeddedScreenFill: {
     flex: 1,
