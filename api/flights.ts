@@ -49,6 +49,8 @@ type ApiResponse = {
   setHeader?: (headerName: string, value: string) => void;
 };
 
+type FlightsViewMode = 'full' | 'summary' | 'trip';
+
 function getHeaderValue(headers: ApiRequest['headers'], key: string): string | undefined {
   if (!headers) {
     return undefined;
@@ -107,6 +109,26 @@ function isDebugRequested(req: ApiRequest): boolean {
 
   const normalized = debugValue.trim().toLowerCase();
   return normalized === '1' || normalized === 'true' || normalized === 'yes';
+}
+
+function getRequestedView(req: ApiRequest): FlightsViewMode | null {
+  const view = getQueryValue(req.query, 'view');
+  if (!view) {
+    return 'full';
+  }
+
+  const normalized = view.trim().toLowerCase();
+  if (normalized === 'full') {
+    return 'full';
+  }
+  if (normalized === 'summary') {
+    return 'summary';
+  }
+  if (normalized === 'trip') {
+    return 'trip';
+  }
+
+  return null;
 }
 
 function sendError(res: ApiResponse, statusCode: number, code: FlightsApiErrorCode, message: string, details?: string) {
@@ -185,6 +207,60 @@ function mergeRemoteTrips(...tripGroups: Trip[][]): Trip[] {
   return mergedTrips;
 }
 
+function toSummaryTrip(trip: Trip): Trip {
+  return {
+    id: trip.id,
+    title: trip.title,
+    emoji: trip.emoji,
+    dateRange: trip.dateRange,
+    bookings: trip.bookings.map((booking) => ({
+      id: booking.id,
+      type: booking.type,
+      status: booking.status,
+      label: booking.label,
+      airline: booking.airline,
+      bookingRef: booking.bookingRef,
+      legs: booking.legs.map((leg) => ({
+        flightNumber: leg.flightNumber,
+        fromCity: leg.fromCity,
+        fromCode: leg.fromCode,
+        toCity: leg.toCity,
+        toCode: leg.toCode,
+        departureTime: leg.departureTime,
+        departureDate: leg.departureDate,
+        arrivalTime: leg.arrivalTime,
+        arrivalDate: leg.arrivalDate,
+        duration: leg.duration,
+        seats: leg.seats,
+      })),
+      activityDate: booking.activityDate,
+      activityTime: booking.activityTime,
+      activityLocation: booking.activityLocation,
+      latitude: booking.latitude,
+      longitude: booking.longitude,
+      hotelStay: booking.hotelStay
+        ? {
+            name: booking.hotelStay.name,
+            city: booking.hotelStay.city,
+            address: booking.hotelStay.address,
+            checkInDate: booking.hotelStay.checkInDate,
+            checkInTime: booking.hotelStay.checkInTime,
+            checkOutDate: booking.hotelStay.checkOutDate,
+            checkOutTime: booking.hotelStay.checkOutTime,
+            confirmationNumber: booking.hotelStay.confirmationNumber,
+            provider: booking.hotelStay.provider,
+            nights: booking.hotelStay.nights,
+          }
+        : undefined,
+    })),
+  };
+}
+
+function findTripById(trips: Trip[], tripId: string): Trip | undefined {
+  const normalized = tripId.trim().toLowerCase();
+  return trips.find((trip) => trip.id.trim().toLowerCase() === normalized);
+}
+
 const fallbackHotelsDbId = '341e0e6fb1188020b7d4ee19676951b2';
 const fallbackIdeasDbId = '343e0e6fb1188000bb6ee72c91cd9c54';
 
@@ -215,9 +291,21 @@ export async function flightsHandler(req: ApiRequest, res: ApiResponse): Promise
   }
 
   const requestApiKey = getApiKeyFromRequest(req);
+  const requestedView = getRequestedView(req);
 
   if (!requestApiKey || requestApiKey !== flightsSyncApiKey) {
     sendError(res, 401, 'unauthorized', 'Invalid API key');
+    return;
+  }
+
+  if (!requestedView) {
+    sendError(res, 400, 'bad_request', "Invalid 'view' query param. Expected one of: full, summary, trip.");
+    return;
+  }
+
+  const requestedTripId = getQueryValue(req.query, 'tripId')?.trim();
+  if (requestedView === 'trip' && !requestedTripId) {
+    sendError(res, 400, 'bad_request', "Missing required 'tripId' query param when view=trip.");
     return;
   }
 
@@ -229,6 +317,46 @@ export async function flightsHandler(req: ApiRequest, res: ApiResponse): Promise
     });
 
     const { trips: flightTrips, diagnostics: flightDiagnostics } = mapNotionFlightPagesToTripsWithDiagnostics(flightPages);
+
+    if (requestedView === 'summary') {
+      const basePayload: FlightsApiResponse = {
+        generatedAt: new Date().toISOString(),
+        trips: flightTrips.map(toSummaryTrip),
+      };
+
+      if (includeDebug) {
+        const debugPayload: FlightsApiDebugResponse = {
+          ...basePayload,
+          debug: {
+            flights: {
+              pagesFetched: flightPages.length,
+              mappedRows: flightDiagnostics.mappedRows,
+              skippedRows: flightDiagnostics.skippedRows,
+              skippedRowErrors: flightDiagnostics.rowErrors.slice(0, 50),
+            },
+            hotels: {
+              databaseId: notionHotelsDbId || null,
+              pagesFetched: 0,
+              mappedRows: 0,
+              skippedRows: 0,
+              skippedRowErrors: [],
+            },
+            ideas: {
+              databaseId: notionIdeasDbId || null,
+              pagesFetched: 0,
+              mappedRows: 0,
+              skippedRows: 0,
+              skippedRowErrors: [],
+            },
+          },
+        };
+        res.status(200).json(debugPayload);
+        return;
+      }
+
+      res.status(200).json(basePayload);
+      return;
+    }
 
     let hotelPagesCount = 0;
     let hotelTrips: Trip[] = [];
@@ -295,7 +423,20 @@ export async function flightsHandler(req: ApiRequest, res: ApiResponse): Promise
     }
 
     const mergedTrips = mergeRemoteTrips(flightTrips, hotelTrips, ideaTrips);
-    const trips = await enrichTripsWithBookingCoordinates(mergedTrips);
+    let trips: Trip[];
+
+    if (requestedView === 'trip') {
+      const targetTrip = requestedTripId ? findTripById(mergedTrips, requestedTripId) : undefined;
+
+      if (!targetTrip) {
+        sendError(res, 404, 'not_found', `Trip '${requestedTripId}' was not found.`);
+        return;
+      }
+
+      trips = await enrichTripsWithBookingCoordinates([targetTrip]);
+    } else {
+      trips = await enrichTripsWithBookingCoordinates(mergedTrips);
+    }
 
     const basePayload: FlightsApiResponse = {
       generatedAt: new Date().toISOString(),

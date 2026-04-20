@@ -1,4 +1,5 @@
 // ── screens/FlightDetailScreen.tsx ──
+import { useEffect } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -131,12 +132,19 @@ function getBooking(trips: Trip[], tripId: string, bookingId: string) {
 }
 
 export function FlightDetailScreen({ navigation, route }: Props) {
-  const { trips } = useTripsData();
+  const { trips, ensureTripLoaded, isTripLoaded, isTripLoading } = useTripsData();
+  const tripId = route.params.tripId;
   const bookingId =
     (route.params as RootStackParamList['FlightDetail'] & { bookingId?: string }).bookingId ??
     route.params.flightId;
+  const tripLoaded = isTripLoaded(tripId);
+  const tripLoading = isTripLoading(tripId);
 
-  const booking = getBooking(trips, route.params.tripId, bookingId);
+  useEffect(() => {
+    void ensureTripLoaded(tripId);
+  }, [ensureTripLoaded, tripId]);
+
+  const booking = getBooking(trips, tripId, bookingId);
   const firstLeg = booking?.legs[0];
   const lastLeg = booking?.legs[booking.legs.length - 1];
   const whoIsFlying = booking ? getWhoIsFlyingData(booking) : { flyers: [], noSeatsBooked: false };
@@ -212,7 +220,13 @@ export function FlightDetailScreen({ navigation, route }: Props) {
             paddingBottom: theme.spacing.xxl,
           }}
         >
-          {!booking || !firstLeg || !lastLeg ? (
+          {tripLoading && !tripLoaded ? (
+            <GlassCard>
+              <Text style={{ ...theme.typography.body, color: theme.colors.textSecondary }}>
+                Loading flight details...
+              </Text>
+            </GlassCard>
+          ) : !booking || !firstLeg || !lastLeg ? (
             <GlassCard>
               <Text style={{ ...theme.typography.body, color: theme.colors.textSecondary }}>
                 We couldn&apos;t find that booking.

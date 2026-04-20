@@ -1196,8 +1196,11 @@ function LoadingSkeleton({ pulseOpacity }: { pulseOpacity: Animated.Value }) {
 }
 
 export function ItineraryScreen({ navigation, route, embedded = false, initialTypeFilter = 'all-types' }: Props & EmbeddedProps) {
-  const { trips, isLoading: tripsLoading, error: tripsError, refresh: refreshTrips } = useTripsData();
-  const trip = trips.find((candidate) => candidate.id === route.params.tripId);
+  const { trips, isLoading: tripsLoading, error: tripsError, refresh: refreshTrips, ensureTripLoaded, isTripLoaded, isTripLoading } = useTripsData();
+  const tripId = route.params.tripId;
+  const trip = trips.find((candidate) => candidate.id === tripId);
+  const tripLoaded = isTripLoaded(tripId);
+  const tripLoading = isTripLoading(tripId);
 
   const [cityFilter, setCityFilter] = useState<CityFilterKey>('all-cities');
   const [typeFilter, setTypeFilter] = useState<TypeFilterKey>(initialTypeFilter);
@@ -1205,7 +1208,11 @@ export function ItineraryScreen({ navigation, route, embedded = false, initialTy
   const pulseOpacity = useRef(new Animated.Value(1)).current;
   const tripStartDate = useMemo(() => parseTripStartDate(trip?.dateRange), [trip?.dateRange]);
   const rawItems = useMemo(() => (trip ? mapTripBookingsToItems(trip, tripStartDate) : []), [trip, tripStartDate]);
-  const shouldShowSkeleton = tripsLoading && rawItems.length === 0;
+  const shouldShowSkeleton = (tripsLoading || tripLoading || (!tripLoaded && Boolean(trip))) && rawItems.length === 0;
+
+  useEffect(() => {
+    void ensureTripLoaded(tripId);
+  }, [ensureTripLoaded, tripId]);
 
   useEffect(() => {
     setTypeFilter(initialTypeFilter);

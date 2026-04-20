@@ -1777,6 +1777,7 @@ function MapTabContent(props: {
   return (
     <View style={[styles.mapTabRoot, props.fullScreen ? styles.mapTabRootFullScreen : null]}>
       <ScrollView
+        style={styles.mapFilterScroll}
         horizontal={true}
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={[styles.mapFilterRow, props.fullScreen ? styles.mapFilterRowFullScreen : null]}
@@ -1985,8 +1986,11 @@ function DocsTabContent({ docs }: { docs: DocItem[] }) {
 }
 
 export function TripDetailScreen({ navigation, route }: Props) {
-  const { trips, isLoading } = useTripsData();
-  const trip = trips.find((item) => item.id === route.params.tripId);
+  const { trips, isLoading, ensureTripLoaded, isTripLoaded, isTripLoading } = useTripsData();
+  const tripId = route.params.tripId;
+  const trip = trips.find((item) => item.id === tripId);
+  const tripLoaded = isTripLoaded(tripId);
+  const tripLoading = isTripLoading(tripId);
 
   const [activeTab, setActiveTab] = useState<TripDetailTabKey>('overview');
   const [itineraryInitialType, setItineraryInitialType] = useState<EmbeddedItineraryFilter>('all-types');
@@ -2010,6 +2014,10 @@ export function TripDetailScreen({ navigation, route }: Props) {
   const tripSubtitle = useMemo(() => (trip ? buildTripHeaderSubtitle(trip) : ''), [trip]);
   const activeTabLabel = useMemo(() => detailTabs.find((tab) => tab.key === activeTab)?.label ?? '', [activeTab]);
   const showingFullScreenTab = activeTab !== 'overview';
+
+  useEffect(() => {
+    void ensureTripLoaded(tripId);
+  }, [ensureTripLoaded, tripId]);
 
   const animateTabSwitch = (nextTab: TripDetailTabKey) => {
     if (nextTab === activeTab) {
@@ -2084,12 +2092,29 @@ export function TripDetailScreen({ navigation, route }: Props) {
         />
         <StatusBar style="dark" />
         <SafeAreaView style={styles.fallbackCenter}>
-          <Text style={styles.fallbackTitle}>{isLoading ? 'Loading trip...' : 'Trip not found'}</Text>
+          <Text style={styles.fallbackTitle}>{isLoading || tripLoading ? 'Loading trip...' : 'Trip not found'}</Text>
           <Pressable onPress={() => navigation.goBack()} style={({ pressed }) => [styles.fallbackBackPress, pressed ? styles.pressScale : null]}>
             <FrostedSurface style={styles.fallbackBackButton}>
               <Text style={styles.fallbackBackText}>Back</Text>
             </FrostedSurface>
           </Pressable>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (!tripLoaded && tripLoading) {
+    return (
+      <View style={styles.screenRoot}>
+        <LinearGradient
+          colors={design.backgroundGradient}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
+        <StatusBar style="dark" />
+        <SafeAreaView style={styles.fallbackCenter}>
+          <Text style={styles.fallbackTitle}>Loading trip details...</Text>
         </SafeAreaView>
       </View>
     );
@@ -2109,7 +2134,7 @@ export function TripDetailScreen({ navigation, route }: Props) {
       <SafeAreaView style={styles.safeArea} edges={['left', 'right', 'top', 'bottom']}>
         {showingFullScreenTab ? (
           <Animated.View style={[styles.fullScreenTabShell, { opacity: tabContentOpacity }]}>
-            <View style={styles.fullScreenTabTopBar}>
+            <View style={[styles.fullScreenTabTopBar, activeTab === 'map' ? styles.fullScreenTabTopBarFloating : null]}>
               <Pressable
                 onPress={() => animateTabSwitch('overview')}
                 style={({ pressed }) => [styles.fullScreenBackPress, pressed ? styles.pressScale : null]}
@@ -2118,7 +2143,7 @@ export function TripDetailScreen({ navigation, route }: Props) {
                   <ChevronLeftIcon />
                 </FrostedSurface>
               </Pressable>
-              <Text style={styles.fullScreenTabTitle}>{activeTabLabel}</Text>
+              {activeTab === 'map' ? null : <Text style={styles.fullScreenTabTitle}>{activeTabLabel}</Text>}
             </View>
 
             <View style={styles.fullScreenTabBody}>
@@ -2178,7 +2203,12 @@ export function TripDetailScreen({ navigation, route }: Props) {
               </Text>
             </View>
 
-            <ScrollView horizontal={true} showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabRow}>
+            <ScrollView
+              style={styles.tabRowScroll}
+              horizontal={true}
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.tabRow}
+            >
               {detailTabs.map((tab) => {
                 const isActive = activeTab === tab.key;
                 return (
@@ -2241,12 +2271,22 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   fullScreenTabTopBar: {
-    paddingTop: 8,
+    paddingTop: 2,
     paddingHorizontal: 12,
-    paddingBottom: 6,
+    paddingBottom: 2,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
+  },
+  fullScreenTabTopBarFloating: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 20,
+    paddingTop: 4,
+    paddingHorizontal: 10,
+    paddingBottom: 0,
   },
   fullScreenBackPress: {
     borderRadius: 14,
@@ -2270,7 +2310,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   navContainer: {
-    paddingTop: 8,
+    paddingTop: 0,
     paddingHorizontal: 20,
   },
   navRow: {
@@ -2299,7 +2339,7 @@ const styles = StyleSheet.create({
   },
   tripSubtitleInline: {
     marginTop: 6,
-    marginBottom: 16,
+    marginBottom: 10,
     marginLeft: 42,
     fontSize: 13,
     fontWeight: '400',
@@ -2307,7 +2347,13 @@ const styles = StyleSheet.create({
   },
   tabRow: {
     paddingHorizontal: 20,
+    paddingTop: 2,
+    paddingBottom: 4,
     gap: 6,
+  },
+  tabRowScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
   },
   tabChipPress: {
     borderRadius: 20,
@@ -2339,6 +2385,7 @@ const styles = StyleSheet.create({
   tabContentWrap: {
     flex: 1,
     marginTop: 6,
+    minHeight: 0,
   },
   tabScroll: {
     flex: 1,
@@ -2461,10 +2508,14 @@ const styles = StyleSheet.create({
     gap: 8,
     paddingBottom: 10,
   },
+  mapFilterScroll: {
+    flexGrow: 0,
+    flexShrink: 0,
+  },
   mapFilterRowFullScreen: {
-    paddingHorizontal: 12,
-    paddingTop: 2,
-    paddingBottom: 8,
+    paddingHorizontal: 8,
+    paddingTop: 34,
+    paddingBottom: 6,
   },
   mapFilterPress: {
     borderRadius: 20,

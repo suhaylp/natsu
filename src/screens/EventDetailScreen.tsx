@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Image, ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -61,8 +62,18 @@ function extractImageUrlFromText(value?: string): string | undefined {
 }
 
 export function EventDetailScreen({ navigation, route }: Props) {
-  const { trips } = useTripsData();
-  const trip = route.params.tripId ? trips.find((item) => item.id === route.params.tripId) : undefined;
+  const { trips, ensureTripLoaded, isTripLoaded, isTripLoading } = useTripsData();
+  const tripId = route.params.tripId;
+  const tripLoaded = tripId ? isTripLoaded(tripId) : true;
+  const tripLoading = tripId ? isTripLoading(tripId) : false;
+
+  useEffect(() => {
+    if (tripId) {
+      void ensureTripLoaded(tripId);
+    }
+  }, [ensureTripLoaded, tripId]);
+
+  const trip = tripId ? trips.find((item) => item.id === tripId) : undefined;
   const booking = route.params.bookingId ? trip?.bookings.find((item) => item.id === route.params.bookingId) : undefined;
 
   const isBookingEvent = booking?.type === 'event' || booking?.type === 'concert' || booking?.type === 'festival';
@@ -135,6 +146,11 @@ export function EventDetailScreen({ navigation, route }: Props) {
           }}
         >
           <GlassCard>
+            {tripLoading && !tripLoaded ? (
+              <Text style={{ ...theme.typography.body, color: theme.colors.textSecondary, marginBottom: theme.spacing.md }}>
+                Loading event details...
+              </Text>
+            ) : null}
             <Text
               style={{
                 ...theme.typography.h2,

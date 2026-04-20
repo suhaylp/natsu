@@ -8,6 +8,8 @@ export type FlightsApiResponse = {
 export type FlightsApiErrorCode =
   | 'method_not_allowed'
   | 'unauthorized'
+  | 'bad_request'
+  | 'not_found'
   | 'misconfigured'
   | 'notion_error'
   | 'mapping_error'

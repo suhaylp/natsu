@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { ScrollView, Text, TouchableOpacity, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -52,8 +53,16 @@ function getBooking(trips: Trip[], tripId: string, bookingId: string) {
 }
 
 export function HotelDetailScreen({ navigation, route }: Props) {
-  const { trips } = useTripsData();
-  const booking = getBooking(trips, route.params.tripId, route.params.bookingId);
+  const { trips, ensureTripLoaded, isTripLoaded, isTripLoading } = useTripsData();
+  const tripId = route.params.tripId;
+  const tripLoaded = isTripLoaded(tripId);
+  const tripLoading = isTripLoading(tripId);
+
+  useEffect(() => {
+    void ensureTripLoaded(tripId);
+  }, [ensureTripLoaded, tripId]);
+
+  const booking = getBooking(trips, tripId, route.params.bookingId);
   const hotel = booking?.hotelStay;
 
   const whenLabel = booking?.activityDate
@@ -114,7 +123,13 @@ export function HotelDetailScreen({ navigation, route }: Props) {
             paddingBottom: theme.spacing.xxl,
           }}
         >
-          {!booking ? (
+          {tripLoading && !tripLoaded ? (
+            <GlassCard>
+              <Text style={{ ...theme.typography.body, color: theme.colors.textSecondary }}>
+                Loading hotel details...
+              </Text>
+            </GlassCard>
+          ) : !booking ? (
             <GlassCard>
               <Text style={{ ...theme.typography.body, color: theme.colors.textSecondary }}>
                 We couldn&apos;t find that hotel booking.

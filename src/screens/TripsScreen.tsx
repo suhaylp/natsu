@@ -226,7 +226,7 @@ function PastTripCard({ trip }: { trip: Trip }) {
 }
 
 export function TripsScreen({ navigation }: Props) {
-  const { trips, isLoading, error, refresh } = useTripsData();
+  const { trips, isLoading, error, refresh, ensureTripLoaded } = useTripsData();
 
   const today = useMemo(() => {
     const date = new Date();
@@ -281,6 +281,12 @@ export function TripsScreen({ navigation }: Props) {
   );
 
   const daysUntilNextTrip = soonestUpcoming ? getDayDiff(today, soonestUpcoming) : null;
+  const isInitialLoading = isLoading && trips.length === 0 && !error;
+  const subtitleText = isInitialLoading
+    ? 'Loading upcoming trips...'
+    : daysUntilNextTrip !== null
+      ? `${daysUntilNextTrip} ${daysUntilNextTrip === 1 ? 'day' : 'days'} until your next trip`
+      : 'No upcoming trips planned';
 
   return (
     <View style={styles.screen}>
@@ -300,11 +306,7 @@ export function TripsScreen({ navigation }: Props) {
           contentContainerStyle={styles.scrollContent}
         >
           <Text style={styles.screenTitle}>{'Upcoming\nTravel'}</Text>
-          <Text style={styles.screenSubtitle}>
-            {daysUntilNextTrip !== null
-              ? `${daysUntilNextTrip} ${daysUntilNextTrip === 1 ? 'day' : 'days'} until your next trip`
-              : 'No upcoming trips planned'}
-          </Text>
+          <Text style={styles.screenSubtitle}>{subtitleText}</Text>
 
           <View style={styles.upcomingList}>
             {upcomingTrips.map(({ trip, startDate }) => {
@@ -315,7 +317,10 @@ export function TripsScreen({ navigation }: Props) {
                   trip={trip}
                   startDate={startDate}
                   daysAway={daysAway}
-                  onPress={() => navigation.navigate('TripDetail', { tripId: trip.id })}
+                  onPress={() => {
+                    void ensureTripLoaded(trip.id);
+                    navigation.navigate('TripDetail', { tripId: trip.id });
+                  }}
                 />
               );
             })}
@@ -332,7 +337,7 @@ export function TripsScreen({ navigation }: Props) {
               pastTrips.map(({ trip }) => (
                 <PastTripCard key={`past-${trip.id}`} trip={trip} />
               ))
-            ) : (
+            ) : isInitialLoading ? null : (
               <GlassLayer style={styles.emptyPastCard} tint="rgba(255,255,255,0.35)">
                 <Text style={styles.emptyPastText}>No past trips yet</Text>
               </GlassLayer>

@@ -3,6 +3,7 @@ import { flightsHandler } from '../api/flights';
 import * as notionMapper from '../src/lib/flightsSync/notionMapper';
 import * as notionHotelsMapper from '../src/lib/flightsSync/notionHotelsMapper';
 import * as notionIdeasMapper from '../src/lib/flightsSync/notionIdeasMapper';
+import * as bookingGeocoder from '../src/lib/flightsSync/bookingGeocoder';
 
 function createMockResponse() {
   let statusCode = 200;
@@ -43,6 +44,7 @@ describe('GET /api/flights', () => {
     vi.spyOn(notionIdeasMapper, 'mapNotionIdeaPagesToTripsWithDiagnostics').mockImplementation(() => {
       throw new notionMapper.NotionMappingError('No valid idea rows found in Notion');
     });
+    vi.spyOn(bookingGeocoder, 'enrichTripsWithBookingCoordinates').mockImplementation(async (trips) => trips);
   });
 
   afterEach(() => {
@@ -244,6 +246,159 @@ describe('GET /api/flights', () => {
           mappedRows: 1,
           skippedRows: 0,
         },
+      },
+    });
+  });
+
+  it('returns summary payload without running coordinate enrichment when view=summary', async () => {
+    const response = createMockResponse();
+
+    vi.spyOn(notionMapper, 'fetchNotionFlightPages').mockResolvedValue([{ properties: {} }]);
+    vi.spyOn(notionMapper, 'mapNotionFlightPagesToTripsWithDiagnostics').mockReturnValue({
+      trips: [
+        {
+          id: 'trip-1',
+          title: 'Trip 1',
+          emoji: '✈️',
+          dateRange: 'Sep 1 – 2, 2026',
+          bookings: [
+            {
+              id: 'booking-1',
+              type: 'flight',
+              status: 'booked',
+              label: 'Leg 1',
+              notes: 'heavy notes that should not be present in summary payload',
+              legs: [
+                {
+                  flightNumber: 'AC1',
+                  fromCity: 'Vancouver',
+                  fromCode: 'YVR',
+                  toCity: 'Seattle',
+                  toCode: 'SEA',
+                  departureTime: '10:00',
+                  departureDate: 'Sep 1',
+                  arrivalTime: '11:00',
+                  arrivalDate: 'Sep 1',
+                },
+              ],
+            },
+          ],
+        },
+      ],
+      diagnostics: {
+        totalRows: 1,
+        mappedRows: 1,
+        skippedRows: 0,
+        rowErrors: [],
+      },
+    });
+
+    const enrichSpy = vi.spyOn(bookingGeocoder, 'enrichTripsWithBookingCoordinates');
+
+    await flightsHandler(
+      {
+        method: 'GET',
+        headers: {
+          'x-api-key': 'shared-key',
+        },
+        query: {
+          view: 'summary',
+        },
+      },
+      response.response
+    );
+
+    expect(response.getStatusCode()).toBe(200);
+    expect(enrichSpy).not.toHaveBeenCalled();
+    expect(response.getPayload()).toMatchObject({
+      trips: [
+        {
+          id: 'trip-1',
+          bookings: [
+            {
+              id: 'booking-1',
+              type: 'flight',
+              label: 'Leg 1',
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('returns one trip when view=trip is requested', async () => {
+    const response = createMockResponse();
+
+    vi.spyOn(notionMapper, 'fetchNotionFlightPages').mockResolvedValue([{ properties: {} }]);
+    vi.spyOn(notionMapper, 'mapNotionFlightPagesToTripsWithDiagnostics').mockReturnValue({
+      trips: [
+        {
+          id: 'trip-1',
+          title: 'Trip 1',
+          emoji: '✈️',
+          dateRange: 'Sep 1 – 2, 2026',
+          bookings: [],
+        },
+        {
+          id: 'trip-2',
+          title: 'Trip 2',
+          emoji: '✈️',
+          dateRange: 'Sep 3 – 4, 2026',
+          bookings: [],
+        },
+      ],
+      diagnostics: {
+        totalRows: 2,
+        mappedRows: 2,
+        skippedRows: 0,
+        rowErrors: [],
+      },
+    });
+
+    await flightsHandler(
+      {
+        method: 'GET',
+        headers: {
+          'x-api-key': 'shared-key',
+        },
+        query: {
+          view: 'trip',
+          tripId: 'trip-2',
+        },
+      },
+      response.response
+    );
+
+    expect(response.getStatusCode()).toBe(200);
+    expect(response.getPayload()).toMatchObject({
+      trips: [
+        {
+          id: 'trip-2',
+        },
+      ],
+    });
+  });
+
+  it('returns 400 when view=trip is requested without tripId', async () => {
+    const response = createMockResponse();
+
+    await flightsHandler(
+      {
+        method: 'GET',
+        headers: {
+          'x-api-key': 'shared-key',
+        },
+        query: {
+          view: 'trip',
+        },
+      },
+      response.response
+    );
+
+    expect(response.getStatusCode()).toBe(400);
+    expect(response.getPayload()).toMatchObject({
+      error: {
+        code: 'bad_request',
       },
     });
   });
