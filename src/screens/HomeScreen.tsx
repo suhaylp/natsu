@@ -166,7 +166,7 @@ export function HomeScreen({ navigation }: Props) {
               style={{
                 fontSize: 32,
                 fontWeight: '500',
-                color: '#1a4030',
+                color: theme.colors.textPrimary,
                 lineHeight: 36,
                 marginBottom: theme.spacing.xs,
                 textAlign: 'left',
@@ -228,7 +228,7 @@ export function HomeScreen({ navigation }: Props) {
             <Text
               style={{
                 fontSize: 11,
-                color: '#5a8a6a',
+                color: theme.colors.textSecondary,
                 fontWeight: '500',
                 letterSpacing: 0.8,
                 textTransform: 'uppercase',
@@ -256,7 +256,7 @@ export function HomeScreen({ navigation }: Props) {
                     style={{
                       fontSize: 11,
                       fontWeight: '500',
-                      color: '#1a4030',
+                      color: theme.colors.textPrimary,
                     }}
                     numberOfLines={1}
                   >
@@ -265,7 +265,7 @@ export function HomeScreen({ navigation }: Props) {
                   <Text
                     style={{
                       fontSize: 10,
-                      color: '#7aaa8a',
+                      color: theme.colors.textMuted,
                     }}
                   >
                     {moment.date}

@@ -19,6 +19,7 @@ import type {
   ItineraryApiItem,
   ItineraryCardType,
 } from '../lib/itinerarySync/contracts';
+import { theme } from '../theme/theme';
 
 type Props = StackScreenProps<RootStackParamList, 'Itinerary'>;
 type EmbeddedProps = {
@@ -66,22 +67,22 @@ type RowItem =
   | { kind: 'day'; key: string; cityKey: string; day: DaySection };
 
 const colors = {
-  screenBg: '#e8f0e9',
-  headerCardBg: 'rgba(232,240,233,0.92)',
-  headerCardBorder: 'rgba(30,61,47,0.18)',
-  primaryText: '#111827',
-  secondaryText: '#667085',
-  tertiaryText: '#98A2B3',
-  accent: '#1e3d2f',
-  backButtonBg: '#dce8df',
-  tertiaryBorder: 'rgba(12,24,44,0.14)',
-  cardBg: '#ffffff',
-  activePillBg: '#534AB7',
-  activePillText: '#EEEDFE',
-  inactivePillBg: '#ffffff',
-  inactivePillText: '#667085',
-  inactivePillBorder: 'rgba(12,24,44,0.16)',
-  skeleton: '#d6dfd8',
+  screenBg: theme.colors.background,
+  headerCardBg: theme.colors.card,
+  headerCardBorder: theme.colors.border,
+  primaryText: theme.colors.textPrimary,
+  secondaryText: theme.colors.textSecondary,
+  tertiaryText: theme.colors.textMuted,
+  accent: theme.colors.accent,
+  backButtonBg: theme.colors.stub,
+  tertiaryBorder: theme.colors.separator,
+  cardBg: theme.colors.background,
+  activePillBg: theme.colors.pillActive,
+  activePillText: theme.colors.pillActiveText,
+  inactivePillBg: theme.colors.background,
+  inactivePillText: theme.colors.pillInactiveText,
+  inactivePillBorder: theme.colors.pillInactiveBorder,
+  skeleton: theme.colors.stub,
 };
 
 const BASE_CITY_ORDER = [
@@ -517,37 +518,24 @@ function buildTripSubtitle(trip?: Trip, items?: UiItem[]): string {
   return 'Live itinerary';
 }
 
-function colorForCityDivider(cityKey: string): { bg: string; text: string } {
-  if (cityKey === 'singapore') {
-    return { bg: '#EEEDFE', text: '#3C3489' };
-  }
-  if (cityKey === 'bangkok') {
-    return { bg: '#E1F5EE', text: '#085041' };
-  }
-  if (cityKey === 'chiang-mai') {
-    return { bg: '#FAEEDA', text: '#633806' };
-  }
-  if (cityKey === 'food') {
-    return { bg: '#FAECE7', text: '#4A1B0C' };
-  }
-
-  return { bg: '#EEF3F6', text: '#1F3F52' };
+function colorForCityDivider(_cityKey: string): { bg: string; text: string } {
+  return { bg: theme.colors.backgroundSecondary, text: theme.colors.textSecondary };
 }
 
 function cardPalette(type: ItineraryCardType): { iconBg: string; tagBg: string; tagText: string } {
   if (type === 'flight') {
-    return { iconBg: '#EEEDFE', tagBg: '#EEEDFE', tagText: '#3C3489' };
+    return { iconBg: theme.colors.flightLight, tagBg: theme.colors.flightLight, tagText: theme.colors.flight };
   }
   if (type === 'hotel') {
-    return { iconBg: '#E1F5EE', tagBg: '#E1F5EE', tagText: '#085041' };
+    return { iconBg: theme.colors.hotelLight, tagBg: theme.colors.hotelLight, tagText: theme.colors.hotel };
   }
   if (type === 'sightseeing') {
-    return { iconBg: '#FAEEDA', tagBg: '#FAEEDA', tagText: '#633806' };
+    return { iconBg: theme.colors.sightseeingLight, tagBg: theme.colors.sightseeingLight, tagText: theme.colors.sightseeing };
   }
   if (type === 'activities') {
-    return { iconBg: '#FAEEDA', tagBg: '#FAEEDA', tagText: '#633806' };
+    return { iconBg: theme.colors.activitiesLight, tagBg: theme.colors.activitiesLight, tagText: theme.colors.activities };
   }
-  return { iconBg: '#FAECE7', tagBg: '#FAECE7', tagText: '#4A1B0C' };
+  return { iconBg: theme.colors.foodLight, tagBg: theme.colors.foodLight, tagText: theme.colors.food };
 }
 
 function typeTagLabel(type: ItineraryCardType): string {
@@ -1081,9 +1069,9 @@ function ItineraryCard({ item }: { item: UiItem }) {
           ) : null}
 
           {confirmedTag ? (
-            <View style={[styles.tagPill, { backgroundColor: '#EAF3DE' }]}> 
+            <View style={[styles.tagPill, { backgroundColor: theme.colors.statusBookedLight }]}>
               <View style={styles.confirmedDot} />
-              <Text style={[styles.tagText, { color: '#27500A' }]}>{confirmedTag.label}</Text>
+              <Text style={[styles.tagText, { color: theme.colors.statusBooked }]}>{confirmedTag.label}</Text>
             </View>
           ) : null}
         </View>
@@ -1621,7 +1609,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: '#639922',
+    backgroundColor: theme.colors.statusBooked,
   },
   flightFooter: {
     marginTop: 8,

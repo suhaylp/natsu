@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { theme } from '../theme/theme';
 import {
   Image,
   Pressable,
@@ -176,15 +177,15 @@ function UpcomingTripCard(props: {
               </GlassLayer>
             ) : null}
 
-            <GlassLayer style={styles.flightPill} tint="rgba(83,74,183,0.12)">
+            <GlassLayer style={styles.flightPill} tint={theme.colors.flightLight}>
               <Text style={styles.flightPillText}>{`${counts.flights} flights`}</Text>
             </GlassLayer>
 
-            <GlassLayer style={styles.hotelPill} tint="rgba(24,95,165,0.12)">
+            <GlassLayer style={styles.hotelPill} tint={theme.colors.hotelLight}>
               <Text style={styles.hotelPillText}>{`${counts.hotels} hotels`}</Text>
             </GlassLayer>
 
-            <GlassLayer style={styles.activityPill} tint="rgba(29,158,117,0.12)">
+            <GlassLayer style={styles.activityPill} tint={theme.colors.activitiesLight}>
               <Text style={styles.activityPillText}>{`${counts.activities} activities`}</Text>
             </GlassLayer>
           </ScrollView>
@@ -291,7 +292,7 @@ export function TripsScreen({ navigation }: Props) {
   return (
     <View style={styles.screen}>
       <LinearGradient
-        colors={['#c8e6d4', '#a8d4bc', '#b8dcc8']}
+        colors={[theme.colors.backgroundGradientStart, theme.colors.backgroundGradientEnd]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={StyleSheet.absoluteFill}
@@ -354,7 +355,7 @@ export function TripsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   screen: {
     flex: 1,
-    backgroundColor: '#c8e6d4',
+    backgroundColor: theme.colors.background,
   },
   safeArea: {
     flex: 1,
@@ -367,7 +368,7 @@ const styles = StyleSheet.create({
   screenTitle: {
     fontSize: 32,
     fontWeight: '700',
-    color: '#0f2d1e',
+    color: theme.colors.textPrimary,
     letterSpacing: -0.5,
     lineHeight: 36,
   },
@@ -375,7 +376,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
     fontSize: 14,
     fontWeight: '400',
-    color: '#3a6b52',
+    color: theme.colors.textSecondary,
   },
   upcomingList: {
     marginTop: 20,
@@ -418,14 +419,14 @@ const styles = StyleSheet.create({
   tripName: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#0f2d1e',
+    color: theme.colors.textPrimary,
     letterSpacing: -0.2,
   },
   tripDate: {
     marginTop: 3,
     fontSize: 13,
     fontWeight: '400',
-    color: '#3a6b52',
+    color: theme.colors.textSecondary,
   },
   arrowButton: {
     width: 32,
@@ -438,7 +439,7 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.8)',
   },
   arrowText: {
-    color: '#0f2d1e',
+    color: theme.colors.textPrimary,
     fontSize: 22,
     lineHeight: 22,
     marginTop: -2,
@@ -457,49 +458,49 @@ const styles = StyleSheet.create({
   daysPillText: {
     fontSize: 11,
     fontWeight: '500',
-    color: '#0f2d1e',
+    color: theme.colors.textPrimary,
   },
   flightPill: {
     borderRadius: 20,
     borderWidth: 0.5,
-    borderColor: 'rgba(83,74,183,0.2)',
+    borderColor: 'rgba(88,86,214,0.25)',
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   flightPillText: {
     fontSize: 11,
     fontWeight: '500',
-    color: '#3C3489',
+    color: theme.colors.flight,
   },
   hotelPill: {
     borderRadius: 20,
     borderWidth: 0.5,
-    borderColor: 'rgba(24,95,165,0.2)',
+    borderColor: 'rgba(0,122,255,0.25)',
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   hotelPillText: {
     fontSize: 11,
     fontWeight: '500',
-    color: '#0C447C',
+    color: theme.colors.hotel,
   },
   activityPill: {
     borderRadius: 20,
     borderWidth: 0.5,
-    borderColor: 'rgba(29,158,117,0.2)',
+    borderColor: 'rgba(255,149,0,0.25)',
     paddingHorizontal: 10,
     paddingVertical: 4,
   },
   activityPillText: {
     fontSize: 11,
     fontWeight: '500',
-    color: '#085041',
+    color: theme.colors.activities,
   },
   pastLabel: {
     marginTop: 18,
     fontSize: 12,
     fontWeight: '600',
-    color: '#3a6b52',
+    color: theme.colors.textSecondary,
     letterSpacing: 0.72,
     textTransform: 'uppercase',
   },
@@ -527,13 +528,13 @@ const styles = StyleSheet.create({
   pastTripName: {
     fontSize: 11,
     fontWeight: '600',
-    color: '#0f2d1e',
+    color: theme.colors.textPrimary,
   },
   pastTripDate: {
     marginTop: 1,
     fontSize: 10,
     fontWeight: '400',
-    color: '#3a6b52',
+    color: theme.colors.textSecondary,
   },
   emptyPastCard: {
     width: 180,
@@ -547,7 +548,7 @@ const styles = StyleSheet.create({
   emptyPastText: {
     fontSize: 11,
     fontWeight: '500',
-    color: '#1a4a33',
+    color: theme.colors.textPrimary,
   },
   errorText: {
     marginTop: 12,

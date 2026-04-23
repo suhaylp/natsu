@@ -1,5 +1,6 @@
 import { Circle, G, Text as SvgText } from 'react-native-svg';
 import type { MapPinVariant } from './types';
+import { theme } from '../../theme/theme';
 
 type PinMarkerProps = {
   x: number;
@@ -12,10 +13,10 @@ type PinMarkerProps = {
 };
 
 const colors = {
-  dark: '#1e3d2f',
-  medium: '#4f7a66',
-  white: '#ffffff',
-  ring: '#a9c2b2',
+  dark: theme.colors.textPrimary,
+  medium: theme.colors.textSecondary,
+  white: theme.colors.background,
+  ring: theme.colors.border,
 };
 
 export function PinMarker({ x, y, variant, icon, count, selected = false, onPress }: PinMarkerProps) {

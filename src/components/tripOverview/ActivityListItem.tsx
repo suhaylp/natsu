@@ -1,5 +1,6 @@
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import type { StopActivity } from './types';
+import { theme } from '../../theme/theme';
 
 type ActivityListItemProps = {
   activity: StopActivity;
@@ -7,12 +8,12 @@ type ActivityListItemProps = {
 };
 
 const colors = {
-  text: '#f2f8f4',
-  muted: '#98b7a7',
-  border: 'rgba(164, 194, 177, 0.28)',
-  rowBg: 'rgba(11, 32, 24, 0.42)',
-  booked: '#58b084',
-  idea: '#81b39a',
+  text: theme.colors.textPrimary,
+  muted: theme.colors.textSecondary,
+  border: theme.colors.separator,
+  rowBg: theme.colors.backgroundSecondary,
+  booked: theme.colors.statusBooked,
+  idea: theme.colors.statusIdea,
 };
 
 function withCurrencyLabel(value?: string): string | undefined {
@@ -70,7 +71,9 @@ export function ActivityListItem({ activity, onPress }: ActivityListItemProps) {
           { backgroundColor: activity.status === 'booked' ? colors.booked : colors.idea },
         ]}
       >
-        <Text style={styles.badgeText}>{statusLabel}</Text>
+        <Text style={[styles.badgeText, { color: activity.status === 'booked' ? '#FFFFFF' : theme.colors.textSecondary }]}>
+          {statusLabel}
+        </Text>
       </View>
     </Pressable>
   );
@@ -92,7 +95,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+    backgroundColor: theme.colors.stub,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -120,7 +123,6 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   badgeText: {
-    color: '#0f241a',
     fontSize: 10,
     fontWeight: '700',
     textTransform: 'uppercase',
