@@ -3,6 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import type { MapPin, RouteSegment, StopActivity } from './types';
+import { theme } from '../../theme/theme';
 
 type TripMapProps = {
   pins: MapPin[];
@@ -18,12 +19,12 @@ type PinCategory = 'flight' | 'hotel' | 'sightseeing' | 'activities' | 'food';
 type PinStyleKind = 'teardrop' | 'code' | 'cluster';
 
 const colors = {
-  mapBg: '#e8f0e9',
-  flight: '#534AB7',
-  hotel: '#185FA5',
-  sightseeing: '#EA4335',
-  activities: '#FB8C00',
-  food: '#34A853',
+  mapBg: theme.colors.backgroundSecondary,
+  flight: theme.colors.flight,
+  hotel: theme.colors.hotel,
+  sightseeing: theme.colors.sightseeing,
+  activities: theme.colors.activities,
+  food: theme.colors.food,
 };
 
 function hexToRgba(hex: string, alpha: number): string {

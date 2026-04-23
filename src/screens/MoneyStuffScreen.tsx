@@ -2,6 +2,7 @@ import { ScrollView, StatusBar, Text, TouchableOpacity, View } from 'react-nativ
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { StackScreenProps } from '@react-navigation/stack';
 import type { RootStackParamList } from '../navigation/AppNavigator';
+import { theme } from '../theme/theme';
 
 type Props = StackScreenProps<RootStackParamList, 'MoneyStuff'>;
 
@@ -104,10 +105,10 @@ export function MoneyStuffScreen({ navigation }: Props) {
             paddingVertical: 4,
           }}
         >
-          <Text style={{ color: '#1a4030', fontSize: 32, lineHeight: 32 }}>‹</Text>
+          <Text style={{ color: theme.colors.textPrimary, fontSize: 32, lineHeight: 32 }}>‹</Text>
         </TouchableOpacity>
 
-        <Text style={{ fontSize: 32, color: '#1a4030', fontWeight: '500', lineHeight: 36, textAlign: 'left' }}>
+        <Text style={{ fontSize: 32, color: theme.colors.textPrimary, fontWeight: '500', lineHeight: 36, textAlign: 'left' }}>
           Money stuff
         </Text>
       </View>
@@ -119,40 +120,40 @@ export function MoneyStuffScreen({ navigation }: Props) {
         <View style={{ flexDirection: 'row', marginBottom: 12 }}>
           <View style={[styles.card, { flex: 1, marginRight: 8 }]}> 
             <Text style={styles.sectionLabel}>SAVINGS</Text>
-            <Text style={{ fontSize: 20, fontWeight: '500', color: '#1a4030', marginBottom: 8 }}>
+            <Text style={{ fontSize: 20, fontWeight: '500', color: theme.colors.textPrimary, marginBottom: 8 }}>
               {formatCurrency(savingsTotal)}
             </Text>
             <View
               style={{
                 width: '100%',
                 height: 4,
-                backgroundColor: 'rgba(90,138,106,0.2)',
+                backgroundColor: theme.colors.stub,
                 borderRadius: 999,
                 overflow: 'hidden',
               }}
             >
-              <View style={{ width: `${savingsPct * 100}%`, height: '100%', backgroundColor: '#2a6a4a' }} />
+              <View style={{ width: `${savingsPct * 100}%`, height: '100%', backgroundColor: theme.colors.accent }} />
             </View>
-            <Text style={{ fontSize: 10, color: '#7aaa8a', marginTop: 8 }}>{`${Math.round(savingsPct * 100)}%`}</Text>
+            <Text style={{ fontSize: 10, color: theme.colors.textMuted, marginTop: 8 }}>{`${Math.round(savingsPct * 100)}%`}</Text>
           </View>
 
-          <View style={[styles.card, { flex: 1 }]}> 
+          <View style={[styles.card, { flex: 1 }]}>
             <Text style={styles.sectionLabel}>FUN FUND</Text>
-            <Text style={{ fontSize: 20, fontWeight: '500', color: '#1a4030', marginBottom: 8 }}>
+            <Text style={{ fontSize: 20, fontWeight: '500', color: theme.colors.textPrimary, marginBottom: 8 }}>
               {formatCurrency(funFundTotal)}
             </Text>
             <View
               style={{
                 width: '100%',
                 height: 4,
-                backgroundColor: 'rgba(90,138,106,0.2)',
+                backgroundColor: theme.colors.stub,
                 borderRadius: 999,
                 overflow: 'hidden',
               }}
             >
-              <View style={{ width: `${funFundPct * 100}%`, height: '100%', backgroundColor: '#7aaa8a' }} />
+              <View style={{ width: `${funFundPct * 100}%`, height: '100%', backgroundColor: theme.colors.statusBooked }} />
             </View>
-            <Text style={{ fontSize: 10, color: '#7aaa8a', marginTop: 8 }}>{`${Math.round(funFundPct * 100)}%`}</Text>
+            <Text style={{ fontSize: 10, color: theme.colors.textMuted, marginTop: 8 }}>{`${Math.round(funFundPct * 100)}%`}</Text>
           </View>
         </View>
 
@@ -165,16 +166,16 @@ export function MoneyStuffScreen({ navigation }: Props) {
           <View style={{ flexDirection: 'row', alignItems: 'stretch' }}>
             <View style={{ flex: 1, paddingRight: 12 }}>
               <Text style={styles.mutedText}>Natalia</Text>
-              <Text style={{ fontSize: 15, fontWeight: '500', color: '#1a4030', marginTop: 2 }}>
+              <Text style={{ fontSize: 15, fontWeight: '500', color: theme.colors.textPrimary, marginTop: 2 }}>
                 {formatCurrency(nataliaTotal)}
               </Text>
             </View>
 
-            <View style={{ width: 0.5, backgroundColor: 'rgba(90,138,106,0.2)' }} />
+            <View style={{ width: 0.5, backgroundColor: theme.colors.separator }} />
 
             <View style={{ flex: 1, paddingLeft: 12 }}>
               <Text style={styles.mutedText}>Suhayl</Text>
-              <Text style={{ fontSize: 15, fontWeight: '500', color: '#1a4030', marginTop: 2 }}>
+              <Text style={{ fontSize: 15, fontWeight: '500', color: theme.colors.textPrimary, marginTop: 2 }}>
                 {formatCurrency(suhayllTotal)}
               </Text>
             </View>
@@ -213,42 +214,42 @@ export function MoneyStuffScreen({ navigation }: Props) {
 }
 
 const styles = {
-  screen: { flex: 1, backgroundColor: '#d4e9dc' },
+  screen: { flex: 1, backgroundColor: theme.colors.background },
   scroll: { padding: 22, paddingTop: 0 },
   sectionLabel: {
     fontSize: 11,
-    color: '#5a8a6a',
-    fontWeight: '500',
+    color: theme.colors.textSecondary,
+    fontWeight: '500' as const,
     letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    textTransform: 'uppercase' as const,
     marginBottom: 2,
   },
   card: {
-    backgroundColor: 'rgba(255,255,255,0.6)',
+    backgroundColor: theme.colors.backgroundSecondary,
     borderRadius: 16,
     padding: 14,
     borderWidth: 0.5,
-    borderColor: 'rgba(255,255,255,0.8)',
+    borderColor: theme.colors.border,
   },
   totalAmount: {
     fontSize: 32,
-    fontWeight: '500',
-    color: '#1a4030',
+    fontWeight: '500' as const,
+    color: theme.colors.textPrimary,
     letterSpacing: 0,
     marginBottom: 18,
   },
   netWorthLabel: {
     fontSize: 14,
-    fontWeight: '500',
-    color: '#5a8a6a',
+    fontWeight: '500' as const,
+    color: theme.colors.textSecondary,
     letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    textTransform: 'uppercase' as const,
     marginTop: 10,
     marginBottom: 2,
   },
-  primaryText: { fontSize: 13, fontWeight: '500', color: '#1a4030' },
-  mutedText: { fontSize: 11, color: '#7aaa8a' },
-  greenText: { fontSize: 13, fontWeight: '500', color: '#2a6a4a' },
-  divider: { height: 0.5, backgroundColor: 'rgba(90,138,106,0.2)' },
-  footer: { textAlign: 'center', fontSize: 11, color: '#7aaa8a', paddingVertical: 18 },
+  primaryText: { fontSize: 13, fontWeight: '500' as const, color: theme.colors.textPrimary },
+  mutedText: { fontSize: 11, color: theme.colors.textMuted },
+  greenText: { fontSize: 13, fontWeight: '500' as const, color: theme.colors.accent },
+  divider: { height: 0.5, backgroundColor: theme.colors.separator },
+  footer: { textAlign: 'center' as const, fontSize: 11, color: theme.colors.textMuted, paddingVertical: 18 },
 } as const;

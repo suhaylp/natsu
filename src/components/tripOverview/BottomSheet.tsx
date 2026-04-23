@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { ActivityListItem } from './ActivityListItem';
 import type { MapPin, StopActivity, TripViewMode } from './types';
+import { theme } from '../../theme/theme';
 
 type BottomSheetProps = {
   viewMode: TripViewMode;
@@ -13,14 +14,14 @@ type BottomSheetProps = {
 };
 
 const colors = {
-  sheet: '#f3f9f5',
-  text: '#1f4735',
-  muted: '#5e7c6d',
-  badgeBooked: '#77ba97',
-  badgeIdea: '#b8dcc8',
-  outline: '#c6ddd0',
-  chipBg: '#e4f0e9',
-  pageBg: '#ffffff',
+  sheet: theme.colors.background,
+  text: theme.colors.textPrimary,
+  muted: theme.colors.textSecondary,
+  badgeBooked: theme.colors.statusBooked,
+  badgeIdea: theme.colors.statusIdea,
+  outline: theme.colors.separator,
+  chipBg: theme.colors.backgroundSecondary,
+  pageBg: theme.colors.background,
 };
 
 export function BottomSheet({
@@ -242,7 +243,7 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   statusBadgeText: {
-    color: '#1a3d2d',
+    color: theme.colors.textPrimary,
     fontSize: 10,
     fontWeight: '800',
     letterSpacing: 0.2,
@@ -266,7 +267,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   metaPillText: {
-    color: '#365b49',
+    color: theme.colors.textSecondary,
     fontSize: 11,
     fontWeight: '600',
   },
@@ -283,7 +284,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.background,
   },
   overviewChipText: {
     color: colors.text,

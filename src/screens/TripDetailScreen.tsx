@@ -13,6 +13,7 @@ import { normalizeLocationText } from '../lib/locationText';
 import type { RootStackParamList } from '../navigation/AppNavigator';
 import type { MapPin, RouteSegment, StopActivity } from '../components/tripOverview/types';
 import { ItineraryScreen } from './ItineraryScreen';
+import { theme } from '../theme/theme';
 
 type Props = StackScreenProps<RootStackParamList, 'TripDetail'>;
 
@@ -28,8 +29,8 @@ type MapDataset = {
 type SwipeGroup = 'flight' | 'hotel' | 'sightseeing' | 'activities' | 'food';
 
 const colors = {
-  accent: '#1e3d2f',
-  topCard: 'rgba(232,240,233,0.92)',
+  accent: theme.colors.textPrimary,
+  topCard: theme.colors.card,
 };
 
 const FILTER_OPTIONS = [
@@ -137,7 +138,7 @@ function SheetFlightBadgeIcon() {
     <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
       <Path
         d="M3 12H9L20 6.5V9.3L14.5 12L20 14.7V17.5L9 12H3Z"
-        stroke="#534AB7"
+        stroke="#5856D6"
         strokeWidth={1.8}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -151,7 +152,7 @@ function SheetHotelBadgeIcon() {
     <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
       <Path
         d="M3 20V9.6C3 9.2 3.2 8.8 3.5 8.6L11.4 2.9C11.8 2.6 12.3 2.6 12.7 2.9L20.5 8.6C20.8 8.8 21 9.2 21 9.6V20H16V14.6C16 14 15.6 13.5 15 13.5H9C8.4 13.5 8 14 8 14.6V20H3Z"
-        fill="#185FA5"
+        fill="#007AFF"
       />
     </Svg>
   );
@@ -174,7 +175,7 @@ function SheetPlaneRowIcon() {
 function SheetSightseeingBadgeIcon() {
   return (
     <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path d="M12 3L14.9 9.1L21.6 9.8L16.7 14.3L18.1 21L12 17.6L5.9 21L7.3 14.3L2.4 9.8L9.1 9.1L12 3Z" fill="#EA4335" />
+      <Path d="M12 3L14.9 9.1L21.6 9.8L16.7 14.3L18.1 21L12 17.6L5.9 21L7.3 14.3L2.4 9.8L9.1 9.1L12 3Z" fill="#FF3B30" />
     </Svg>
   );
 }
@@ -182,8 +183,8 @@ function SheetSightseeingBadgeIcon() {
 function SheetActivitiesBadgeIcon() {
   return (
     <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path d="M4 12H20M12 4V20" stroke="#FB8C00" strokeWidth={2.2} strokeLinecap="round" />
-      <Path d="M7 7L17 17M17 7L7 17" stroke="#FB8C00" strokeWidth={1.6} strokeLinecap="round" />
+      <Path d="M4 12H20M12 4V20" stroke="#FF9500" strokeWidth={2.2} strokeLinecap="round" />
+      <Path d="M7 7L17 17M17 7L7 17" stroke="#FF9500" strokeWidth={1.6} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -191,9 +192,9 @@ function SheetActivitiesBadgeIcon() {
 function SheetFoodBadgeIcon() {
   return (
     <Svg width={20} height={20} viewBox="0 0 24 24" fill="none">
-      <Path d="M6 3V11C6 12.1 6.9 13 8 13V21" stroke="#34A853" strokeWidth={2} strokeLinecap="round" />
-      <Path d="M10 3V21" stroke="#34A853" strokeWidth={2} strokeLinecap="round" />
-      <Path d="M16 3C18.2 3 20 4.8 20 7V21" stroke="#34A853" strokeWidth={2} strokeLinecap="round" />
+      <Path d="M6 3V11C6 12.1 6.9 13 8 13V21" stroke="#34C759" strokeWidth={2} strokeLinecap="round" />
+      <Path d="M10 3V21" stroke="#34C759" strokeWidth={2} strokeLinecap="round" />
+      <Path d="M16 3C18.2 3 20 4.8 20 7V21" stroke="#34C759" strokeWidth={2} strokeLinecap="round" />
     </Svg>
   );
 }
@@ -237,12 +238,12 @@ function getExperienceLabel(type: ExperienceType): string {
 
 function getFilterTint(key: FilterKey, active: boolean): { bg: string; border: string; text: string } {
   const palette = {
-    all: { bg: '#F5F7FA', border: '#D0D5DD', text: '#475467' },
-    flights: { bg: '#F3F0FF', border: '#D5D0F5', text: '#3C3489' },
-    hotels: { bg: '#EBF5FF', border: '#CFE2F3', text: '#0C447C' },
-    sightseeing: { bg: '#FDECEC', border: '#F5CBC7', text: '#B42318' },
-    activities: { bg: '#FFF4E8', border: '#FCD9BD', text: '#B54708' },
-    food: { bg: '#ECF9F0', border: '#CAEED5', text: '#166534' },
+    all: { bg: theme.colors.backgroundSecondary, border: theme.colors.separator, text: theme.colors.textSecondary },
+    flights: { bg: theme.colors.flightLight, border: 'rgba(88,86,214,0.25)', text: theme.colors.flight },
+    hotels: { bg: theme.colors.hotelLight, border: 'rgba(0,122,255,0.25)', text: theme.colors.hotel },
+    sightseeing: { bg: theme.colors.sightseeingLight, border: 'rgba(255,59,48,0.25)', text: theme.colors.sightseeing },
+    activities: { bg: theme.colors.activitiesLight, border: 'rgba(255,149,0,0.25)', text: theme.colors.activities },
+    food: { bg: theme.colors.foodLight, border: 'rgba(52,199,89,0.25)', text: theme.colors.food },
   } as const;
 
   const base = palette[key];
@@ -1123,17 +1124,17 @@ const currencyNames: Record<string, string> = {
 const exchangeRateCache = new Map<string, ExchangeRateCacheEntry>();
 
 const design = {
-  backgroundGradient: ['#c8e6d4', '#a8d4bc', '#b8dcc8'] as const,
-  screenTitle: '#0f2d1e',
-  bodyText: '#1a4a33',
-  mutedText: '#3a6b52',
-  border: 'rgba(255,255,255,0.7)',
-  borderSoft: 'rgba(255,255,255,0.6)',
-  glass: 'rgba(255,255,255,0.45)',
-  glassStrong: 'rgba(255,255,255,0.55)',
-  flight: '#534AB7',
-  hotel: '#185FA5',
-  activity: '#1D9E75',
+  backgroundGradient: [theme.colors.backgroundGradientStart, theme.colors.backgroundGradientEnd] as const,
+  screenTitle: theme.colors.textPrimary,
+  bodyText: theme.colors.textPrimary,
+  mutedText: theme.colors.textSecondary,
+  border: theme.colors.border,
+  borderSoft: theme.colors.separator,
+  glass: theme.colors.card,
+  glassStrong: 'rgba(255,255,255,0.85)',
+  flight: theme.colors.flight,
+  hotel: theme.colors.hotel,
+  activity: theme.colors.activities,
   docs: '#BA7517',
 };
 
@@ -1380,22 +1381,22 @@ function minutesSince(timestamp: number): number {
 
 function categoryToneForActivity(activity: StopActivity): { label: string; bg: string; text: string } {
   if (activity.bookingType === 'flight') {
-    return { label: 'Flight', bg: '#EEEDFE', text: '#3C3489' };
+    return { label: 'Flight', bg: theme.colors.flightLight, text: theme.colors.flight };
   }
 
   if (activity.bookingType === 'hotel') {
-    return { label: 'Hotel', bg: '#E6F1FB', text: '#0C447C' };
+    return { label: 'Hotel', bg: theme.colors.hotelLight, text: theme.colors.hotel };
   }
 
   const experience = getExperienceType(activity);
   if (experience === 'food') {
-    return { label: 'Food', bg: '#FAECE7', text: '#4A1B0C' };
+    return { label: 'Food', bg: theme.colors.foodLight, text: theme.colors.food };
   }
   if (experience === 'activities') {
-    return { label: 'Activities', bg: '#E1F5EE', text: '#085041' };
+    return { label: 'Activities', bg: theme.colors.activitiesLight, text: theme.colors.activities };
   }
 
-  return { label: 'Sightseeing', bg: '#E1F5EE', text: '#085041' };
+  return { label: 'Sightseeing', bg: theme.colors.sightseeingLight, text: theme.colors.sightseeing };
 }
 
 function buildDocsList(trip: Trip, countries: string[]): DocItem[] {
@@ -1472,7 +1473,7 @@ function OverviewPlaneIcon() {
     <Svg width={22} height={22} viewBox="0 0 24 24" fill="none">
       <Path
         d="M3 12H9L20 6.5V9.3L14.5 12L20 14.7V17.5L9 12H3Z"
-        stroke="#534AB7"
+        stroke="#5856D6"
         strokeWidth={1.8}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -2323,7 +2324,7 @@ function MapTabContent(props: {
                             styles.mapActivityChip,
                             isActive ? styles.mapActivityChipActive : styles.mapActivityChipInactive,
                           ]}
-                          tint={isActive ? 'rgba(15,45,30,0.85)' : 'rgba(255,255,255,0.6)'}
+                          tint={isActive ? 'rgba(28,28,30,0.88)' : 'rgba(255,255,255,0.6)'}
                         >
                           <Text style={[styles.mapActivityChipText, isActive ? styles.mapActivityChipTextActive : null]} numberOfLines={1}>
                             {activity.name}
@@ -2343,7 +2344,7 @@ function MapTabContent(props: {
                 </Pressable>
 
                 <Pressable onPress={() => openInMaps(focusedActivity)} style={({ pressed }) => [styles.mapActionPress, pressed ? styles.pressScale : null]}>
-                  <FrostedSurface style={styles.mapActionPrimary} tint="rgba(15,45,30,0.82)">
+                  <FrostedSurface style={styles.mapActionPrimary} tint="rgba(28,28,30,0.88)">
                     <Text style={styles.mapActionPrimaryText}>Open Maps</Text>
                   </FrostedSurface>
                 </Pressable>
@@ -2661,7 +2662,7 @@ export function TripDetailScreen({ navigation, route }: Props) {
                   >
                     <FrostedSurface
                       style={[styles.tabChip, isActive ? styles.tabChipActive : styles.tabChipInactive]}
-                      tint={isActive ? 'rgba(15,45,30,0.85)' : 'rgba(255,255,255,0.35)'}
+                      tint={isActive ? 'rgba(28,28,30,0.88)' : 'rgba(255,255,255,0.35)'}
                     >
                       <Text style={[styles.tabChipText, isActive ? styles.tabChipTextActive : styles.tabChipTextInactive]}>
                         {tab.label}
@@ -2704,7 +2705,7 @@ export function TripDetailScreen({ navigation, route }: Props) {
 const styles = StyleSheet.create({
   screenRoot: {
     flex: 1,
-    backgroundColor: '#c8e6d4',
+    backgroundColor: theme.colors.background,
   },
   safeArea: {
     flex: 1,
@@ -2819,7 +2820,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   tabChipTextActive: {
-    color: '#e8f5ee',
+    color: theme.colors.textOnDark,
   },
   tabChipTextInactive: {
     color: design.mutedText,
@@ -3042,7 +3043,7 @@ const styles = StyleSheet.create({
     maxWidth: 180,
   },
   mapActivityChipActive: {
-    borderColor: 'rgba(15,45,30,0.85)',
+    borderColor: 'rgba(28,28,30,0.88)',
   },
   mapActivityChipInactive: {
     borderColor: 'rgba(255,255,255,0.8)',
@@ -3053,7 +3054,7 @@ const styles = StyleSheet.create({
     color: design.bodyText,
   },
   mapActivityChipTextActive: {
-    color: '#e8f5ee',
+    color: theme.colors.textOnDark,
   },
   mapActionRow: {
     marginTop: 10,
@@ -3086,11 +3087,11 @@ const styles = StyleSheet.create({
   mapActionPrimaryText: {
     fontSize: 13,
     fontWeight: '500',
-    color: '#e8f5ee',
+    color: theme.colors.textOnDark,
   },
   mapLegacyRoot: {
     flex: 1,
-    backgroundColor: '#e8f0e9',
+    backgroundColor: theme.colors.backgroundSecondary,
   },
   mapLegacyFilterOverlay: {
     position: 'absolute',
@@ -3130,13 +3131,13 @@ const styles = StyleSheet.create({
     bottom: 4,
   },
   bottomSheet: {
-    backgroundColor: '#ffffff',
+    backgroundColor: theme.colors.background,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderBottomLeftRadius: 14,
     borderBottomRightRadius: 14,
     borderWidth: 0.5,
-    borderColor: 'rgba(12,24,44,0.12)',
+    borderColor: theme.colors.separator,
     overflow: 'hidden',
     paddingBottom: 12,
   },
@@ -3149,7 +3150,7 @@ const styles = StyleSheet.create({
     width: 36,
     height: 4,
     borderRadius: 999,
-    backgroundColor: '#D0D5DD',
+    backgroundColor: theme.colors.separator,
   },
   sheetContent: {
     paddingHorizontal: 12,
@@ -3171,19 +3172,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerIconBadgeFlight: {
-    backgroundColor: '#EEEDFE',
+    backgroundColor: theme.colors.flightLight,
   },
   headerIconBadgeHotel: {
-    backgroundColor: '#E6F1FB',
+    backgroundColor: theme.colors.hotelLight,
   },
   headerIconBadgeSightseeing: {
-    backgroundColor: '#FDECEC',
+    backgroundColor: theme.colors.sightseeingLight,
   },
   headerIconBadgeActivities: {
-    backgroundColor: '#FFF4E8',
+    backgroundColor: theme.colors.activitiesLight,
   },
   headerIconBadgeFood: {
-    backgroundColor: '#ECF9F0',
+    backgroundColor: theme.colors.foodLight,
   },
   headerTextBlock: {
     flex: 1,
@@ -3191,12 +3192,12 @@ const styles = StyleSheet.create({
     paddingTop: 2,
   },
   headerTitle: {
-    color: '#111827',
+    color: theme.colors.textPrimary,
     fontSize: 15,
     fontWeight: '500',
   },
   headerSubtitle: {
-    color: '#6B7280',
+    color: theme.colors.textSecondary,
     fontSize: 12,
     fontWeight: '400',
     marginTop: 2,
@@ -3208,38 +3209,38 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   headerTypeTagFlight: {
-    backgroundColor: '#EEEDFE',
+    backgroundColor: theme.colors.flightLight,
   },
   headerTypeTagHotel: {
-    backgroundColor: '#E6F1FB',
+    backgroundColor: theme.colors.hotelLight,
   },
   headerTypeTagSightseeing: {
-    backgroundColor: '#FDECEC',
+    backgroundColor: theme.colors.sightseeingLight,
   },
   headerTypeTagActivities: {
-    backgroundColor: '#FFF4E8',
+    backgroundColor: theme.colors.activitiesLight,
   },
   headerTypeTagFood: {
-    backgroundColor: '#ECF9F0',
+    backgroundColor: theme.colors.foodLight,
   },
   headerTypeTagText: {
     fontSize: 11,
     fontWeight: '500',
   },
   headerTypeTagTextFlight: {
-    color: '#3C3489',
+    color: theme.colors.flight,
   },
   headerTypeTagTextHotel: {
-    color: '#0C447C',
+    color: theme.colors.hotel,
   },
   headerTypeTagTextSightseeing: {
-    color: '#B42318',
+    color: theme.colors.sightseeing,
   },
   headerTypeTagTextActivities: {
-    color: '#B54708',
+    color: theme.colors.activities,
   },
   headerTypeTagTextFood: {
-    color: '#166534',
+    color: theme.colors.food,
   },
   sheetBody: {
     paddingTop: 12,
@@ -3252,7 +3253,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   flightChainSubLabel: {
-    color: '#6B7280',
+    color: theme.colors.textSecondary,
     fontSize: 11,
     fontWeight: '400',
     marginTop: -2,
@@ -3266,7 +3267,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 2,
   },
   flightCodeText: {
-    color: '#111827',
+    color: theme.colors.textPrimary,
     fontSize: 22,
     fontWeight: '500',
     minWidth: 52,
@@ -3295,23 +3296,23 @@ const styles = StyleSheet.create({
   infoTile: {
     flex: 1,
     minWidth: 0,
-    backgroundColor: '#F7F8FA',
+    backgroundColor: theme.colors.backgroundSecondary,
     borderRadius: 11,
     padding: 10,
   },
   tileLabel: {
-    color: '#6B7280',
+    color: theme.colors.textSecondary,
     fontSize: 11,
     fontWeight: '400',
   },
   tileValue: {
-    color: '#111827',
+    color: theme.colors.textPrimary,
     fontSize: 15,
     fontWeight: '500',
     marginTop: 4,
   },
   tileSubLabel: {
-    color: '#6B7280',
+    color: theme.colors.textSecondary,
     fontSize: 11,
     fontWeight: '400',
     marginTop: 2,
@@ -3326,14 +3327,14 @@ const styles = StyleSheet.create({
     minWidth: 0,
     borderRadius: 11,
     borderWidth: 0.5,
-    borderColor: 'rgba(17,24,39,0.25)',
-    backgroundColor: '#F7F8FA',
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.backgroundSecondary,
     paddingVertical: 11,
     alignItems: 'center',
     justifyContent: 'center',
   },
   moreInfoButtonText: {
-    color: '#344054',
+    color: theme.colors.textPrimary,
     fontSize: 13,
     fontWeight: '500',
   },
@@ -3346,19 +3347,19 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   openMapsButtonFlight: {
-    backgroundColor: '#534AB7',
+    backgroundColor: theme.colors.flight,
   },
   openMapsButtonHotel: {
-    backgroundColor: '#185FA5',
+    backgroundColor: theme.colors.hotel,
   },
   openMapsButtonSightseeing: {
-    backgroundColor: '#EA4335',
+    backgroundColor: theme.colors.sightseeing,
   },
   openMapsButtonActivities: {
-    backgroundColor: '#FB8C00',
+    backgroundColor: theme.colors.activities,
   },
   openMapsButtonFood: {
-    backgroundColor: '#34A853',
+    backgroundColor: theme.colors.food,
   },
   openMapsButtonText: {
     color: '#ffffff',
@@ -3371,7 +3372,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   bottomSheetEmptyText: {
-    color: '#4d6d5d',
+    color: theme.colors.textSecondary,
     fontSize: 13,
     fontWeight: '600',
   },

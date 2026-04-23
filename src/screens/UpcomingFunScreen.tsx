@@ -312,12 +312,12 @@ export function UpcomingFunScreen({ navigation }: Props) {
                   paddingHorizontal: 14,
                   paddingVertical: 6,
                   marginRight: index === FILTERS.length - 1 ? 0 : theme.spacing.sm,
-                  backgroundColor: isActive ? theme.colors.accent : 'rgba(255,255,255,0.5)',
+                  backgroundColor: isActive ? theme.colors.pillActive : theme.colors.pillInactive,
                   borderWidth: isActive ? 0 : 0.5,
-                  borderColor: isActive ? 'transparent' : 'rgba(255,255,255,0.8)',
+                  borderColor: isActive ? 'transparent' : theme.colors.pillInactiveBorder,
                 }}
               >
-                <Text style={{ fontSize: 12, color: isActive ? '#fff' : theme.colors.accent }}>{filter}</Text>
+                <Text style={{ fontSize: 12, color: isActive ? theme.colors.pillActiveText : theme.colors.pillInactiveText }}>{filter}</Text>
               </TouchableOpacity>
             );
           })}
@@ -429,15 +429,15 @@ export function UpcomingFunScreen({ navigation }: Props) {
 }
 
 const styles = {
-  screen: { flex: 1, backgroundColor: '#d4e9dc' },
+  screen: { flex: 1, backgroundColor: theme.colors.background },
   scroll: { padding: 22, paddingTop: 0 },
   sectionLabel: {
     fontSize: 11,
-    color: '#5a8a6a',
-    fontWeight: '500',
+    color: theme.colors.textSecondary,
+    fontWeight: '500' as const,
     letterSpacing: 0.8,
-    textTransform: 'uppercase',
+    textTransform: 'uppercase' as const,
     marginBottom: 10,
   },
-  footer: { textAlign: 'center', fontSize: 11, color: '#7aaa8a', paddingVertical: 18 },
+  footer: { textAlign: 'center' as const, fontSize: 11, color: theme.colors.textMuted, paddingVertical: 18 },
 } as const;
